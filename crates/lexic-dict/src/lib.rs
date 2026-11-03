@@ -8,4 +8,4 @@ pub use client::{DictionaryClient, LookupResult};
 pub use error::DictError;
 pub use normalize::normalize;
 
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "1.0.0";
