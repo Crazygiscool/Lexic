@@ -1,5 +1,11 @@
 #[cfg(feature = "ui")]
 mod app;
+#[cfg(feature = "ui")]
+mod components;
+#[cfg(feature = "ui")]
+mod theme;
+#[cfg(feature = "ui")]
+mod views;
 
 #[cfg(feature = "ui")]
 fn prepare() -> (
