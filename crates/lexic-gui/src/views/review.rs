@@ -42,7 +42,24 @@ impl App {
         }
 
         let Some(current_index) = session.current else {
-            return container(text("No card").size(24)).padding(32).into();
+            return container(text("No card").size(24))
+                .padding(32)
+                .style(|_theme| iced::widget::container::Style {
+                    background: Some(iced::Color::from_rgb8(30, 41, 59).into()),
+                    border: iced::Border {
+                        radius: 12.0.into(),
+                        width: 1.0,
+                        color: iced::Color::from_rgb8(71, 85, 105),
+                    },
+                    shadow: iced::Shadow {
+                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 6.0),
+                        blur_radius: 14.0,
+                    },
+                    text_color: Some(iced::Color::from_rgb8(218, 226, 253)),
+                    snap: false,
+                })
+                .into();
         };
         let review_card = &session.cards[current_index];
         let now = now_utc();
@@ -104,7 +121,24 @@ impl App {
                 .spacing(8),
             );
             content = content.push(button("Undo").on_press(Message::UndoReview));
-            container(content).padding(32).into()
+            container(content)
+                .padding(32)
+                .style(|_theme| iced::widget::container::Style {
+                    background: Some(iced::Color::from_rgb8(30, 41, 59).into()),
+                    border: iced::Border {
+                        radius: 12.0.into(),
+                        width: 1.0,
+                        color: iced::Color::from_rgb8(71, 85, 105),
+                    },
+                    shadow: iced::Shadow {
+                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 6.0),
+                        blur_radius: 14.0,
+                    },
+                    text_color: Some(iced::Color::from_rgb8(218, 226, 253)),
+                    snap: false,
+                })
+                .into()
         } else {
             let content = column![
                 front,
@@ -112,7 +146,24 @@ impl App {
                 text("Press Space to reveal").size(12),
             ]
             .spacing(16);
-            container(content).padding(32).into()
+            container(content)
+                .padding(32)
+                .style(|_theme| iced::widget::container::Style {
+                    background: Some(iced::Color::from_rgb8(30, 41, 59).into()),
+                    border: iced::Border {
+                        radius: 12.0.into(),
+                        width: 1.0,
+                        color: iced::Color::from_rgb8(71, 85, 105),
+                    },
+                    shadow: iced::Shadow {
+                        color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 6.0),
+                        blur_radius: 14.0,
+                    },
+                    text_color: Some(iced::Color::from_rgb8(218, 226, 253)),
+                    snap: false,
+                })
+                .into()
         }
     }
 }
