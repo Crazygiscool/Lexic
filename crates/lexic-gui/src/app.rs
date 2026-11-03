@@ -83,6 +83,7 @@ pub enum Screen {
     Review,
     Stats,
     Settings,
+    Project,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -132,6 +133,11 @@ pub struct App {
     pub(crate) stats_range: u32,
     pub(crate) stats_data: Option<StatsSnapshot>,
 
+    pub(crate) gset_project_path: String,
+    pub(crate) gset_target_language: String,
+    pub(crate) gset_status: Option<String>,
+    pub(crate) gset_result: Option<crate::gset::GsetRunResult>,
+
     pub(crate) review: Option<ReviewSession>,
     pub(crate) review_status: Option<String>,
 }
@@ -176,6 +182,10 @@ pub struct UndoSnapshot {
 pub enum Message {
     Navigate(Screen),
     ToggleSidebar,
+    GsetProjectPathChanged(String),
+    GsetTargetLanguageChanged(String),
+    RunGsetTranspile,
+    GsetTranspileFinished(Result<crate::gset::GsetRunResult, String>),
     Event(iced::Event),
     SearchInputChanged(String),
     Lookup,
@@ -276,6 +286,12 @@ impl App {
             settings_status: None,
             stats_range: 30,
             stats_data: None,
+
+            gset_project_path: String::new(),
+            gset_target_language: String::from("go"),
+            gset_status: None,
+            gset_result: None,
+
             review: None,
             review_status: None,
         };
@@ -400,6 +416,56 @@ impl App {
             }
             Message::ToggleSidebar => {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
+                Task::none()
+            }
+            Message::GsetProjectPathChanged(value) => {
+                self.gset_project_path = value;
+                Task::none()
+            }
+            Message::GsetTargetLanguageChanged(value) => {
+                self.gset_target_language = value;
+                Task::none()
+            }
+            Message::RunGsetTranspile => {
+                let path = self.gset_project_path.trim().to_string();
+                if path.is_empty() {
+                    self.gset_status = Some(String::from("Enter a project path"));
+                    return Task::none();
+                }
+                let target = self.gset_target_language.trim().to_string();
+                self.gset_status = Some(String::from("Running GSET transpilation..."));
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            crate::gset::transpile(
+                                std::path::Path::new(&path),
+                                if target.is_empty() { "go" } else { &target },
+                                None,
+                                None,
+                                true,
+                                false,
+                            )
+                        })
+                        .await
+                        .map_err(|error| error.to_string())?
+                    },
+                    Message::GsetTranspileFinished,
+                )
+            }
+            Message::GsetTranspileFinished(result) => {
+                match result {
+                    Ok(result) => {
+                        self.gset_status = Some(if result.success {
+                            String::from("GSET transpilation completed")
+                        } else {
+                            String::from("GSET transpilation failed")
+                        });
+                        self.gset_result = Some(result);
+                    }
+                    Err(error) => {
+                        self.gset_status = Some(error);
+                    }
+                }
                 Task::none()
             }
             Message::Event(event) => {
@@ -1207,7 +1273,7 @@ impl App {
 
     pub fn style(&self, _theme: &Theme) -> iced::theme::Style {
         iced::theme::Style {
-            background_color: Color::BLACK,
+            background_color: Color::from_rgb8(15, 23, 42),
             text_color: Color::from_rgb8(245, 245, 245),
         }
     }

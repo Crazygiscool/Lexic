@@ -13,6 +13,7 @@ const MIGRATIONS: &[(&str, usize)] = &[
         include_str!("../migrations/0002_fts_contentless_delete.sql"),
         2,
     ),
+    (include_str!("../migrations/0003_transpilation.sql"), 3),
 ];
 
 #[derive(Clone)]

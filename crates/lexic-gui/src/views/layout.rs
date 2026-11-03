@@ -10,6 +10,7 @@ impl App {
             ("Decks", Screen::Decks),
             ("Review", Screen::Review),
             ("Stats", Screen::Stats),
+            ("GSET", Screen::Project),
             ("Settings", Screen::Settings),
         ];
 
@@ -199,6 +200,7 @@ impl App {
             Screen::DeckDetail(deck_id) => self.deck_detail_view(deck_id),
             Screen::Review => self.review_view(),
             Screen::Stats => self.stats_view(),
+            Screen::Project => self.project_view(),
             Screen::Settings => self.settings_view(),
         };
 
@@ -214,7 +216,7 @@ impl App {
             .height(Length::Fill)
             .style(|_theme: &Theme| container::Style {
                 snap: false,
-                background: Some(Color::BLACK.into()),
+                background: Some(Color::from_rgb8(15, 23, 42).into()),
                 border: iced::Border::default(),
                 shadow: iced::Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),

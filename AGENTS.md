@@ -31,6 +31,8 @@ Rust Cargo workspace for `lexic`, an offline-first dictionary + SM-2 flashcard d
 - Search uses exact match, FTS5 (`entries_fts`), then `LIKE` fallback; `upsert_entry` fully rebuilds the FTS row for an entry.
 - `entries_fts` is a contentless FTS5 table with `contentless_delete=1` so deletes/rebuilds work; migration `0002` recreates it for older databases.
 - `dict::cache::is_fresh` exists, but `upsert_entry` stores `fetched_at = NULL`, so cache freshness is not currently enforced.
+- GSET is vendored as a root submodule in `GSET/`; use `git submodule update --init --recursive` before builds/CI. Lexic invokes the `gset` CLI and falls back to `GSET/target/.../gset` or `cargo run --manifest-path GSET/Cargo.toml`.
+- A new project/transpilation screen calls `crate::gset::transpile`; capture stdout as generated output and stderr as diagnostics.
 
 ## Testing notes
 
