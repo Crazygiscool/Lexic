@@ -1,0 +1,20 @@
+product-name = "Lexic"
+version = "1.0.0"
+identifier = "dev.lexic"
+description = "Offline-first Rust dictionary and spaced repetition flashcard desktop application."
+homepage = "https://github.com/Crazygiscool/Lexic"
+authors = ["Crazygiscool"]
+license = "MIT"
+
+binaries-dir = "target/release"
+binaries = [
+  { path = "lexic-gui", main = true }
+]
+
+icons = [
+  "assets/icons/lexic.png",
+  "assets/icons/lexic.ico",
+  "assets/icons/lexic.icns"
+]
+
+out-dir = "dist"
