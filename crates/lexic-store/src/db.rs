@@ -7,7 +7,13 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::StoreError;
 
-const MIGRATIONS: &[(&str, usize)] = &[(include_str!("../migrations/0001_init.sql"), 1)];
+const MIGRATIONS: &[(&str, usize)] = &[
+    (include_str!("../migrations/0001_init.sql"), 1),
+    (
+        include_str!("../migrations/0002_fts_contentless_delete.sql"),
+        2,
+    ),
+];
 
 #[derive(Clone)]
 pub struct Store {
