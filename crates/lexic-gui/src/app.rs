@@ -138,6 +138,9 @@ pub struct App {
     pub(crate) gset_status: Option<String>,
     pub(crate) gset_result: Option<crate::gset::GsetRunResult>,
 
+    pub(crate) gset_projects: Vec<lexic_store::Project>,
+    pub(crate) gset_selected_project: Option<lexic_core::model::Id>,
+
     pub(crate) gset_editor_path: String,
     pub(crate) gset_editor_content: iced::widget::text_editor::Content,
     pub(crate) gset_editor_status: Option<String>,
@@ -190,6 +193,9 @@ pub enum Message {
     GsetTargetLanguageChanged(String),
     RunGsetTranspile,
     GsetTranspileFinished(Result<crate::gset::GsetRunResult, String>),
+    LoadGsetProjects,
+    GsetProjectsLoaded(Result<Vec<lexic_store::Project>, String>),
+    SelectGsetProject(lexic_core::model::Id),
     GsetEditorPathChanged(String),
     LoadGsetEditorFile,
     GsetEditorFileLoaded(Result<String, String>),
@@ -301,6 +307,9 @@ impl App {
             gset_target_language: String::from("go"),
             gset_status: None,
             gset_result: None,
+
+            gset_projects: Vec::new(),
+            gset_selected_project: None,
 
             gset_editor_path: String::new(),
             gset_editor_content: iced::widget::text_editor::Content::new(),
@@ -425,6 +434,9 @@ impl App {
                 if screen == Screen::Stats {
                     return self.update(Message::LoadStats);
                 }
+                if screen == Screen::Project {
+                    return self.update(Message::LoadGsetProjects);
+                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -516,6 +528,9 @@ impl App {
                             String::from("GSET transpilation failed")
                         });
                         self.gset_result = Some(result);
+                        if self.store.is_some() {
+                            return self.update(Message::LoadGsetProjects);
+                        }
                     }
                     Err(error) => {
                         self.gset_status = Some(error);
@@ -556,6 +571,39 @@ impl App {
             }
             Message::GsetEditorAction(action) => {
                 self.gset_editor_content.perform(action);
+                Task::none()
+            }
+            Message::LoadGsetProjects => {
+                let Some(store) = self.store.clone() else {
+                    return Task::<Message>::none();
+                };
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || store.list_projects().map_err(|error| error.to_string()))
+                            .await
+                            .map_err(|error| error.to_string())?
+                    },
+                    Message::GsetProjectsLoaded,
+                )
+            }
+            Message::GsetProjectsLoaded(result) => {
+                match result {
+                    Ok(projects) => {
+                        if self.gset_selected_project.is_none() {
+                            self.gset_selected_project = projects.first().map(|project| project.id);
+                        }
+                        self.gset_projects = projects;
+                    }
+                    Err(error) => self.gset_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::SelectGsetProject(project_id) => {
+                self.gset_selected_project = Some(project_id);
+                if let Some(project) = self.gset_projects.iter().find(|project| project.id == project_id) {
+                    self.gset_project_path = project.root_path.clone();
+                    self.gset_target_language = project.target_language.clone();
+                }
                 Task::none()
             }
             Message::SaveGsetEditorFile => {

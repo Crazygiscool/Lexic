@@ -62,8 +62,60 @@ impl App {
                 }
             });
 
+        let mut project_buttons = column![].spacing(4);
+        for project in &self.gset_projects {
+            let is_selected = self.gset_selected_project == Some(project.id);
+            project_buttons = project_buttons.push(
+                row![
+                    button(text(&project.name).size(14).color(Color::from_rgb8(218, 226, 253)))
+                        .padding([8, 12])
+                        .on_press(Message::SelectGsetProject(project.id))
+                        .style(move |_theme, status| iced::widget::button::Style {
+                            background: Some(
+                                if is_selected
+                                    || matches!(status, iced::widget::button::Status::Hovered)
+                                {
+                                    Color::from_rgb8(51, 65, 85)
+                                } else {
+                                    Color::from_rgb8(30, 41, 59)
+                                }
+                                .into(),
+                            ),
+                            text_color: Color::from_rgb8(218, 226, 253),
+                            border: iced::Border {
+                                radius: 8.0.into(),
+                                width: 1.0,
+                                color: Color::from_rgb8(71, 85, 105),
+                            },
+                            shadow: theme::shadow(),
+                            snap: false,
+                        }),
+                    text(&project.root_path)
+                        .size(12)
+                        .color(Color::from_rgb8(148, 163, 184)),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            );
+        }
+
+        let saved_projects: Element<'_, Message> = if self.gset_projects.is_empty() {
+            text("No saved projects yet. Run a transpilation to create one.")
+                .size(14)
+                .color(TEXT_MUTED)
+                .into()
+        } else {
+            column![
+                text("Saved projects").size(14).color(TEXT_SECONDARY),
+                project_buttons,
+            ]
+            .spacing(4)
+            .into()
+        };
+
         let mut content = column![
             text("GSET Transpilation").size(28).color(TEXT_PRIMARY),
+            saved_projects,
             row![path_input, target_input, run_button]
                 .spacing(10)
                 .align_y(Alignment::Center),

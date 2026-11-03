@@ -818,6 +818,32 @@ impl Store {
         Ok(id)
     }
 
+
+    pub fn list_projects(&self) -> Result<Vec<crate::Project>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT id, name, root_path, source_language, target_language, created_at, updated_at
+             FROM projects
+             ORDER BY updated_at DESC, name COLLATE NOCASE",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(crate::Project {
+                id: row.get::<_, String>(0)?.parse().unwrap(),
+                name: row.get(1)?,
+                root_path: row.get(2)?,
+                source_language: row.get(3)?,
+                target_language: row.get(4)?,
+                created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap_or_else(Utc::now),
+                updated_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(Utc::now),
+            })
+        })?;
+        let mut projects = Vec::new();
+        for row in rows {
+            projects.push(row?);
+        }
+        Ok(projects)
+    }
+
 }
 fn map_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     Ok(Entry {
