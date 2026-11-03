@@ -1,0 +1,23 @@
+[package]
+name = "lexic-dict"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+lexic-core = { path = "../lexic-core" }
+chrono = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+unicode-normalization = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = "0.6"
+
+[lints]
+workspace = true
