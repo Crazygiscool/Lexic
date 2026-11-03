@@ -646,6 +646,178 @@ impl Store {
         )?;
         Ok(())
     }
+
+    pub fn ensure_project(
+        &self,
+        root_path: &str,
+        target_language: &str,
+    ) -> Result<lexic_core::model::Id, StoreError> {
+        let conn = self.lock()?;
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM projects WHERE root_path = ?1",
+                params![root_path],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            return id
+                .parse()
+                .map_err(|_| StoreError::Internal(id.clone()));
+        }
+        drop(conn);
+
+        let name = std::path::Path::new(root_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("project")
+            .to_string();
+        let id = unused_uuid();
+        let now = Utc::now();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO projects (id, name, root_path, source_language, target_language, created_at, updated_at)
+             VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6)",
+            params![
+                id.to_string(),
+                name,
+                root_path,
+                target_language,
+                now.timestamp(),
+                now.timestamp()
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn start_transpile_run(
+        &self,
+        project_id: lexic_core::model::Id,
+        target_language: &str,
+    ) -> Result<lexic_core::model::Id, StoreError> {
+        let id = unused_uuid();
+        let now = Utc::now();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO transpile_runs (id, project_id, target_language, status, started_at, diagnostic_count)
+             VALUES (?1, ?2, ?3, 'running', ?4, 0)",
+            params![
+                id.to_string(),
+                project_id.to_string(),
+                target_language,
+                now.timestamp()
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn finish_transpile_run(
+        &self,
+        run_id: lexic_core::model::Id,
+        status: &str,
+        exit_code: Option<i32>,
+        diagnostic_count: i32,
+        summary: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let now = Utc::now();
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE transpile_runs
+             SET status = ?1, finished_at = ?2, exit_code = ?3, diagnostic_count = ?4, summary = ?5
+             WHERE id = ?6",
+            params![
+                status,
+                now.timestamp(),
+                exit_code,
+                diagnostic_count,
+                summary,
+                run_id.to_string()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn append_missing_function(
+        &self,
+        run_id: lexic_core::model::Id,
+        section_id: Option<lexic_core::model::Id>,
+        name: &str,
+        source_path: Option<&str>,
+        line: Option<i64>,
+        reason: &str,
+    ) -> Result<lexic_core::model::Id, StoreError> {
+        let id = unused_uuid();
+        let now = Utc::now();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO missing_functions (id, run_id, section_id, name, source_path, line, reason, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id.to_string(),
+                run_id.to_string(),
+                section_id.map(|value| value.to_string()),
+                name,
+                source_path,
+                line,
+                reason,
+                now.timestamp()
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn list_transpile_runs(
+        &self,
+        project_id: lexic_core::model::Id,
+    ) -> Result<Vec<crate::TranspileRun>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT id, project_id, target_language, status, started_at, finished_at, exit_code, diagnostic_count, summary
+             FROM transpile_runs
+             WHERE project_id = ?1
+             ORDER BY started_at DESC",
+        )?;
+        let rows = statement.query_map(params![project_id.to_string()], |row| {
+            Ok(crate::TranspileRun {
+                id: row.get::<_, String>(0)?.parse().unwrap(),
+                project_id: row.get::<_, String>(1)?.parse().unwrap(),
+                target_language: row.get(2)?,
+                status: row.get(3)?,
+                started_at: DateTime::from_timestamp(row.get(4)?, 0).unwrap_or_else(Utc::now),
+                finished_at: row
+                    .get::<_, Option<i64>>(5)?
+                    .map(|value| DateTime::from_timestamp(value, 0).unwrap_or_else(Utc::now)),
+                exit_code: row.get(6)?,
+                diagnostic_count: row.get(7)?,
+                summary: row.get(8)?,
+            })
+        })?;
+        let mut runs = Vec::new();
+        for row in rows {
+            runs.push(row?);
+        }
+        Ok(runs)
+    }
+
+
+    pub fn add_manual_edit(
+        &self,
+        project_id: lexic_core::model::Id,
+        path: &str,
+        content: &str,
+    ) -> Result<lexic_core::model::Id, StoreError> {
+        let id = unused_uuid();
+        let now = Utc::now();
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO manual_edits (id, project_id, section_id, path, content, created_at)
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5)",
+            params![id.to_string(), project_id.to_string(), path, content, now.timestamp()],
+        )?;
+        Ok(id)
+    }
+
 }
 fn map_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     Ok(Entry {

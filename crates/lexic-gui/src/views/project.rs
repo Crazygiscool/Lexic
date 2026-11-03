@@ -2,7 +2,8 @@ use crate::app::*;
 
 use crate::theme::{self, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY};
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Length};
+use iced::{Alignment, Color, Element, Length, Theme};
+use iced::widget::text_editor;
 
 impl App {
     pub fn project_view(&self) -> Element<'_, Message> {
@@ -124,6 +125,48 @@ impl App {
                 }),
             );
         }
+
+        let editor_path = text_input("File to edit", &self.gset_editor_path)
+            .on_input(Message::GsetEditorPathChanged)
+            .padding([10, 14])
+            .width(Length::Fill);
+
+        let editor = text_editor(&self.gset_editor_content)
+            .on_action(Message::GsetEditorAction)
+            .height(Length::Fixed(320.0))
+            .width(1200.0);
+
+        let editor_panel = container(
+            column![
+                text("Raw File Editor").size(18).color(TEXT_PRIMARY),
+                row![editor_path]
+                    .spacing(10)
+                    .push(button("Load").on_press(Message::LoadGsetEditorFile))
+                    .push(button("Save").on_press(Message::SaveGsetEditorFile)),
+                editor,
+                if let Some(status) = &self.gset_editor_status {
+                    text(status).size(14).color(TEXT_SECONDARY)
+                } else {
+                    text("").size(1)
+                },
+            ]
+            .spacing(8),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(|_theme: &Theme| iced::widget::container::Style {
+            background: Some(Color::from_rgb8(30, 41, 59).into()),
+            border: iced::Border {
+                radius: 12.0.into(),
+                width: 1.0,
+                color: Color::from_rgb8(71, 85, 105),
+            },
+            shadow: theme::shadow(),
+            text_color: Some(TEXT_PRIMARY),
+            snap: false,
+        });
+
+        content = content.push(editor_panel);
 
         scrollable(container(content).padding(24).width(Length::Fill))
             .height(Length::Fill)

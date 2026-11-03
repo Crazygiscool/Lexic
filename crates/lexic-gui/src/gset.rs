@@ -12,6 +12,7 @@ pub struct GsetDiagnostic {
 #[derive(Debug, Clone)]
 pub struct GsetRunResult {
     pub success: bool,
+    pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
     pub diagnostics: Vec<GsetDiagnostic>,
@@ -67,6 +68,7 @@ pub fn transpile(
     let diagnostics = parse_diagnostics(&stderr);
     Ok(GsetRunResult {
         success: output.status.success(),
+        exit_code: output.status.code(),
         stdout,
         stderr,
         diagnostics,
