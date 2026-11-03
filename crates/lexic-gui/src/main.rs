@@ -31,10 +31,15 @@ fn main() -> iced::Result {
     init_logging();
     let (store, decks) = prepare();
     let boot = move || app::App::new(store.clone(), decks.clone());
+    let window = iced::window::Settings {
+        size: (1100.0, 760.0).into(),
+        ..Default::default()
+    };
     iced::application(boot, app::App::update, app::App::view)
         .title(app::App::title)
         .theme(app::App::theme)
-        .window_size((1100.0, 760.0))
+        .window(window)
+        .style(app::App::style)
         .subscription(app::App::subscription)
         .run()
 }

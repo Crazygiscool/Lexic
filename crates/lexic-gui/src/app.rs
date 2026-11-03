@@ -10,9 +10,69 @@ use std::sync::Arc;
 
 use iced::keyboard;
 use iced::{
-    Element, Length, Task, Theme,
-    widget::{button, column, container, row, text, text_input},
+    Alignment, Color, Element, Length, Task, Theme,
+    widget::{button as iced_button, column, container, row, scrollable, slider, text, text_input},
 };
+
+fn monochrome_button(
+    selected: bool,
+) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style {
+    move |_theme, status| {
+        let (background, text_color, border) = match status {
+            iced::widget::button::Status::Hovered => (
+                Color::from_rgb8(34, 34, 34),
+                Color::from_rgb8(245, 245, 245),
+                Color::from_rgb8(70, 70, 70),
+            ),
+            iced::widget::button::Status::Pressed => (
+                Color::from_rgb8(28, 28, 28),
+                Color::from_rgb8(245, 245, 245),
+                Color::from_rgb8(70, 70, 70),
+            ),
+            iced::widget::button::Status::Disabled => (
+                Color::from_rgb8(16, 16, 16),
+                Color::from_rgb8(105, 105, 105),
+                Color::from_rgb8(38, 38, 38),
+            ),
+            iced::widget::button::Status::Active => {
+                if selected {
+                    (
+                        Color::from_rgb8(52, 52, 52),
+                        Color::from_rgb8(245, 245, 245),
+                        Color::from_rgb8(82, 82, 82),
+                    )
+                } else {
+                    (
+                        Color::from_rgb8(24, 24, 24),
+                        Color::from_rgb8(230, 230, 230),
+                        Color::from_rgb8(54, 54, 54),
+                    )
+                }
+            }
+        };
+        iced::widget::button::Style {
+            snap: false,
+            background: Some(background.into()),
+            text_color,
+            border: iced::Border {
+                radius: 10.0.into(),
+                width: 1.0,
+                color: border,
+            },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.32),
+                offset: iced::Vector::new(0.0, 4.0),
+                blur_radius: 10.0,
+            },
+        }
+    }
+}
+
+fn button<'a, Message>(
+    content: impl Into<Element<'a, Message>>,
+) -> iced::widget::Button<'a, Message> {
+    iced_button(content).style(monochrome_button(false))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Screen {
@@ -45,6 +105,7 @@ pub enum ThemeMode {
 
 pub struct App {
     screen: Screen,
+    sidebar_collapsed: bool,
     store: Option<Arc<Store>>,
     dictionary: DictionaryClient,
     decks: Vec<Deck>,
@@ -65,6 +126,7 @@ pub struct App {
     deck_management_status: Option<String>,
     deck_cards: Vec<DeckCard>,
     deck_card_status: Option<String>,
+    #[allow(dead_code)]
     theme_mode: ThemeMode,
     include_review_history: bool,
     settings_status: Option<String>,
@@ -114,6 +176,7 @@ pub struct UndoSnapshot {
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     Navigate(Screen),
+    ToggleSidebar,
     Event(iced::Event),
     SearchInputChanged(String),
     Lookup,
@@ -123,7 +186,6 @@ pub enum Message {
     SaveFinished(Result<lexic_core::model::Id, String>),
     LoadSettings,
     SettingsLoaded(Option<String>),
-    SetTheme(ThemeMode),
     ToggleIncludeReviewHistory,
     BeginExport,
     ExportPathChosen(Option<std::path::PathBuf>),
@@ -189,7 +251,8 @@ impl App {
     pub fn new(store: Option<Arc<Store>>, decks: Vec<Deck>) -> (Self, Task<Message>) {
         let dictionary = DictionaryClient::default();
         let app = Self {
-            screen: Screen::Search,
+            screen: Screen::Home,
+            sidebar_collapsed: false,
             store,
             dictionary,
             decks,
@@ -256,18 +319,6 @@ impl App {
                     Some("system") => ThemeMode::System,
                     _ => ThemeMode::Light,
                 };
-                Task::none()
-            }
-            Message::SetTheme(mode) => {
-                self.theme_mode = mode;
-                let value = match mode {
-                    ThemeMode::Light => "light",
-                    ThemeMode::Dark => "dark",
-                    ThemeMode::System => "system",
-                };
-                if let Some(store) = self.store.clone() {
-                    store.set_setting("theme", value).ok();
-                }
                 Task::none()
             }
             Message::ToggleIncludeReviewHistory => {
@@ -346,6 +397,10 @@ impl App {
                 if screen == Screen::Stats {
                     return self.update(Message::LoadStats);
                 }
+                Task::none()
+            }
+            Message::ToggleSidebar => {
+                self.sidebar_collapsed = !self.sidebar_collapsed;
                 Task::none()
             }
             Message::Event(event) => {
@@ -774,6 +829,7 @@ impl App {
                     return Task::none();
                 };
                 self.review_status = None;
+                self.screen = Screen::Review;
                 Task::perform(
                     async move {
                         let now = now_utc();
@@ -1059,6 +1115,7 @@ impl App {
         let id = self.lookup_generation;
         self.search_status = SearchStatus::Loading;
         self.save_status = None;
+        self.screen = Screen::Search;
 
         let client = self.dictionary.clone();
         let store = self.store.clone();
@@ -1067,20 +1124,42 @@ impl App {
 
         Task::perform(
             async move {
-                let lookup = client
+                let mut lookup = client
                     .lookup(&query, now)
                     .await
                     .map_err(|error| error.to_string())?;
-                if let Some(store) = store {
+                if let Some(store) = store.as_ref() {
                     let entry = lookup.entry.clone();
                     let senses = lookup.senses.clone();
+                    let upsert_store = store.clone();
                     tokio::task::spawn_blocking(move || {
-                        store
+                        upsert_store
                             .upsert_entry(&entry, &senses)
                             .map_err(|error| error.to_string())
                     })
                     .await
                     .map_err(|error| error.to_string())??;
+
+                    let search_store = store.clone();
+                    let normalized_query = query.clone();
+                    if let Ok(canonical) = tokio::task::spawn_blocking(move || {
+                        search_store
+                            .search_entries(&normalized_query, 1)
+                            .ok()
+                            .and_then(|mut entries| entries.pop())
+                    })
+                    .await
+                    {
+                        if let Some(canonical) = canonical {
+                            let old_id = lookup.entry.id;
+                            lookup.entry = canonical.clone();
+                            for sense in &mut lookup.senses {
+                                if sense.entry_id == old_id {
+                                    sense.entry_id = canonical.id;
+                                }
+                            }
+                        }
+                    }
                 }
                 Ok(lookup)
             },
@@ -1118,23 +1197,196 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let navigation = container(
-            column![
-                text("Lexic").size(24),
-                nav_button("Home", Screen::Home, self.screen),
-                nav_button("Search", Screen::Search, self.screen),
-                nav_button("Decks", Screen::Decks, self.screen),
-                nav_button("Review", Screen::Review, self.screen),
-                nav_button("Stats", Screen::Stats, self.screen),
-                nav_button("Settings", Screen::Settings, self.screen),
+        let labels = [
+            ("Home", Screen::Home),
+            ("Dictionary", Screen::Search),
+            ("Decks", Screen::Decks),
+            ("Review", Screen::Review),
+            ("Stats", Screen::Stats),
+            ("Settings", Screen::Settings),
+        ];
+
+        let sidebar_width = if self.sidebar_collapsed {
+            Length::Fixed(82.0)
+        } else {
+            Length::Fixed(236.0)
+        };
+
+        let mut nav_items = column![].spacing(6);
+        let brand = if self.sidebar_collapsed {
+            text("L").size(24).color(Color::from_rgb8(245, 245, 245))
+        } else {
+            text("Lexic")
+                .size(22)
+                .color(Color::from_rgb8(245, 245, 245))
+        };
+        let sidebar_toggle = button(text(">").size(16).color(Color::from_rgb8(245, 245, 245)))
+            .padding([6, 10])
+            .on_press(Message::ToggleSidebar)
+            .style(monochrome_button(false));
+        nav_items = nav_items.push(
+            row![
+                brand,
+                iced::widget::Space::new().width(Length::Fill),
+                sidebar_toggle
             ]
-            .spacing(8),
+            .spacing(8)
+            .align_y(Alignment::Center),
+        );
+
+        for (label, screen) in labels {
+            let is_active = screen == self.screen;
+            let collapsed = self.sidebar_collapsed;
+            let nav_label = if collapsed {
+                label.chars().next().unwrap().to_string()
+            } else {
+                label.to_string()
+            };
+            let mut nav_button = button(
+                text(nav_label)
+                    .size(15)
+                    .color(Color::from_rgb8(245, 245, 245)),
+            )
+            .width(Length::Fill)
+            .padding([10, 12])
+            .on_press(Message::Navigate(screen));
+            nav_button = nav_button.style(move |_theme: &Theme, status| {
+                let hovered = matches!(status, iced::widget::button::Status::Hovered);
+                let pressed = matches!(status, iced::widget::button::Status::Pressed);
+                let (background, text_color, border) = if is_active {
+                    (
+                        Color::from_rgb8(54, 54, 54),
+                        Color::from_rgb8(245, 245, 245),
+                        Color::from_rgb8(86, 86, 86),
+                    )
+                } else if hovered || pressed {
+                    (
+                        Color::from_rgb8(34, 34, 34),
+                        Color::from_rgb8(245, 245, 245),
+                        Color::from_rgb8(74, 74, 74),
+                    )
+                } else {
+                    (
+                        Color::from_rgb8(18, 18, 18),
+                        Color::from_rgb8(225, 225, 225),
+                        Color::from_rgb8(44, 44, 44),
+                    )
+                };
+                iced::widget::button::Style {
+                    snap: false,
+                    background: Some(background.into()),
+                    text_color,
+                    border: iced::Border {
+                        radius: 10.0.into(),
+                        width: 1.0,
+                        color: border,
+                    },
+                    shadow: iced::Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 6.0),
+                        blur_radius: 14.0,
+                    },
+                }
+            });
+            nav_items = nav_items.push(nav_button);
+        }
+
+        let sidebar = container(column![nav_items].spacing(10).height(Length::Fill))
+            .padding(16)
+            .width(sidebar_width)
+            .height(Length::Fill)
+            .style(|_theme: &Theme| container::Style {
+                snap: false,
+                background: Some(Color::from_rgb8(10, 10, 10).into()),
+                border: iced::Border {
+                    radius: 0.0.into(),
+                    width: 1.0,
+                    color: Color::from_rgb8(30, 30, 30),
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                    offset: iced::Vector::new(0.0, 6.0),
+                    blur_radius: 14.0,
+                },
+                text_color: Some(Color::from_rgb8(245, 245, 245)),
+            });
+
+        let search_input = text_input("Search the dictionary…", &self.search_input)
+            .on_input(Message::SearchInputChanged)
+            .on_submit(Message::Lookup)
+            .padding([10, 14])
+            .width(Length::Fill);
+
+        let search_input = search_input.style(|_theme, _status| text_input::Style {
+            background: iced::Background::Color(Color::from_rgb8(15, 15, 15)),
+            border: iced::Border {
+                radius: 10.0.into(),
+                width: 1.0,
+                color: Color::from_rgb8(44, 44, 44),
+            },
+            icon: Color::from_rgb8(163, 163, 163),
+            placeholder: Color::from_rgb8(115, 115, 115),
+            value: Color::from_rgb8(245, 245, 245),
+            selection: Color::from_rgb8(50, 50, 50),
+        });
+
+        let lookup_button = button(text("Look up").size(14).color(Color::BLACK))
+            .padding([10, 16])
+            .on_press(Message::Lookup);
+        let lookup_button = lookup_button.style(|_theme, status| {
+            let (background, text_color) = match status {
+                iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
+                    (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                }
+                iced::widget::button::Status::Disabled => (
+                    Color::from_rgb8(60, 60, 60),
+                    Color::from_rgb8(160, 160, 160),
+                ),
+                _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
+            };
+            iced::widget::button::Style {
+                snap: false,
+                background: Some(background.into()),
+                text_color,
+                border: iced::Border {
+                    radius: 10.0.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                    offset: iced::Vector::new(0.0, 6.0),
+                    blur_radius: 14.0,
+                },
+            }
+        });
+
+        let topbar = container(
+            row![search_input, lookup_button,]
+                .spacing(12)
+                .align_y(Alignment::Center),
         )
-        .padding(16)
-        .width(Length::Fixed(220.0));
+        .padding([14, 18])
+        .height(Length::Fixed(76.0))
+        .width(Length::Fill)
+        .style(|_theme: &Theme| container::Style {
+            snap: false,
+            background: Some(Color::from_rgb8(10, 10, 10).into()),
+            border: iced::Border {
+                radius: 0.0.into(),
+                width: 1.0,
+                color: Color::from_rgb8(30, 30, 30),
+            },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                offset: iced::Vector::new(0.0, 6.0),
+                blur_radius: 14.0,
+            },
+            text_color: Some(Color::from_rgb8(245, 245, 245)),
+        });
 
         let body: Element<'_, Message> = match self.screen {
-            Screen::Home => container(text("Lexic").size(42)).padding(32).into(),
+            Screen::Home => self.home_view(),
             Screen::Search => self.search_view(),
             Screen::Decks => self.decks_view(),
             Screen::DeckDetail(deck_id) => self.deck_detail_view(deck_id),
@@ -1143,7 +1395,28 @@ impl App {
             Screen::Settings => self.settings_view(),
         };
 
-        row![navigation, body].into()
+        let content =
+            scrollable(container(body).padding(28).width(Length::Fill)).height(Length::Fill);
+
+        let main = column![topbar, content].spacing(0).width(Length::Fill);
+
+        let root = row![sidebar, main].height(Length::Fill);
+
+        container(root)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_theme: &Theme| container::Style {
+                snap: false,
+                background: Some(Color::BLACK.into()),
+                border: iced::Border::default(),
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                    offset: iced::Vector::new(0.0, 6.0),
+                    blur_radius: 14.0,
+                },
+                text_color: Some(Color::from_rgb8(245, 245, 245)),
+            })
+            .into()
     }
 
     fn review_view(&self) -> Element<'_, Message> {
@@ -1257,19 +1530,156 @@ impl App {
         }
     }
 
-    fn search_view(&self) -> Element<'_, Message> {
+    fn home_view(&self) -> Element<'_, Message> {
+        let due_cards: i64 = self.deck_counts.values().map(|(_, _, due)| *due).sum();
+        let new_cards: i64 = self.deck_counts.values().map(|(_, new, _)| *new).sum();
+
+        let stat_card = |title: &'static str, value: String| -> Element<'_, Message> {
+            container(
+                column![
+                    text(title).size(13).color(Color::from_rgb8(163, 163, 163)),
+                    text(value).size(28).color(Color::from_rgb8(245, 245, 245))
+                ]
+                .spacing(4),
+            )
+            .padding(18)
+            .width(Length::Fixed(180.0))
+            .style(|_theme: &Theme| container::Style {
+                snap: false,
+                background: Some(Color::from_rgb8(18, 18, 18).into()),
+                border: iced::Border {
+                    radius: 16.0.into(),
+                    width: 1.0,
+                    color: Color::from_rgb8(42, 42, 42),
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                    offset: iced::Vector::new(0.0, 6.0),
+                    blur_radius: 14.0,
+                },
+                text_color: Some(Color::from_rgb8(245, 245, 245)),
+            })
+            .into()
+        };
+
         let mut content = column![
-            text("Dictionary").size(32),
+            text("Welcome to Lexic")
+                .size(36)
+                .color(Color::from_rgb8(245, 245, 245)),
+            text("Search from the bar above or jump back into your study flow.")
+                .size(15)
+                .color(Color::from_rgb8(163, 163, 163)),
             row![
-                text_input("Search for a word", &self.search_input)
-                    .on_input(Message::SearchInputChanged)
-                    .on_submit(Message::Lookup)
-                    .width(Length::Fill),
-                button("Look up").on_press(Message::Lookup),
+                stat_card("Decks", self.decks.len().to_string()),
+                stat_card("Due cards", due_cards.to_string()),
+                stat_card("New cards", new_cards.to_string()),
             ]
-            .spacing(8),
+            .spacing(12),
+            row![
+                {
+                    let button = button(text("Start review").size(15).color(Color::BLACK))
+                        .on_press(Message::StartReview)
+                        .padding([10, 18]);
+                    button.style(|_theme, status| {
+                        let (background, text_color) = match status {
+                            iced::widget::button::Status::Hovered
+                            | iced::widget::button::Status::Pressed => {
+                                (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                            }
+                            _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
+                        };
+                        iced::widget::button::Style {
+                            snap: false,
+                            background: Some(background.into()),
+                            text_color,
+                            border: iced::Border {
+                                radius: 10.0.into(),
+                                width: 0.0,
+                                color: Color::TRANSPARENT,
+                            },
+                            shadow: iced::Shadow {
+                                color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                                offset: iced::Vector::new(0.0, 6.0),
+                                blur_radius: 14.0,
+                            },
+                        }
+                    })
+                },
+                {
+                    let button = button(text("Browse decks").size(15).color(Color::BLACK))
+                        .on_press(Message::Navigate(Screen::Decks))
+                        .padding([10, 18]);
+                    button.style(|_theme, status| {
+                        let (background, text_color) = match status {
+                            iced::widget::button::Status::Hovered
+                            | iced::widget::button::Status::Pressed => {
+                                (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                            }
+                            _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
+                        };
+                        iced::widget::button::Style {
+                            snap: false,
+                            background: Some(background.into()),
+                            text_color,
+                            border: iced::Border {
+                                radius: 10.0.into(),
+                                width: 0.0,
+                                color: Color::TRANSPARENT,
+                            },
+                            shadow: iced::Shadow {
+                                color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                                offset: iced::Vector::new(0.0, 6.0),
+                                blur_radius: 14.0,
+                            },
+                        }
+                    })
+                },
+            ]
+            .spacing(12),
         ]
-        .spacing(16);
+        .spacing(18);
+
+        if let Some(entry) = &self.active_entry {
+            content = content.push(
+                container(
+                    column![
+                        text("Last looked up")
+                            .size(13)
+                            .color(Color::from_rgb8(163, 163, 163)),
+                        text(&entry.word)
+                            .size(24)
+                            .color(Color::from_rgb8(245, 245, 245)),
+                        text(&entry.source)
+                            .size(12)
+                            .color(Color::from_rgb8(115, 115, 115)),
+                    ]
+                    .spacing(4),
+                )
+                .padding(18)
+                .width(Length::Fill)
+                .style(|_theme: &Theme| container::Style {
+                    snap: false,
+                    background: Some(Color::from_rgb8(18, 18, 18).into()),
+                    border: iced::Border {
+                        radius: 16.0.into(),
+                        width: 1.0,
+                        color: Color::from_rgb8(42, 42, 42),
+                    },
+                    shadow: iced::Shadow {
+                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                        offset: iced::Vector::new(0.0, 6.0),
+                        blur_radius: 14.0,
+                    },
+                    text_color: Some(Color::from_rgb8(245, 245, 245)),
+                }),
+            );
+        }
+
+        container(content).padding(8).into()
+    }
+
+    fn search_view(&self) -> Element<'_, Message> {
+        let mut content = column![].spacing(16);
 
         match self.search_status {
             SearchStatus::Loading => content = content.push(text("Loading definition...")),
@@ -1335,7 +1745,20 @@ impl App {
             row![
                 text_input("New deck name", &self.new_deck_name)
                     .on_input(Message::NewDeckNameChanged)
-                    .width(Length::Fill),
+                    .padding([10, 14])
+                    .width(Length::Fill)
+                    .style(|_theme, _status| text_input::Style {
+                        background: iced::Background::Color(Color::from_rgb8(15, 15, 15)),
+                        border: iced::Border {
+                            radius: 10.0.into(),
+                            width: 1.0,
+                            color: Color::from_rgb8(44, 44, 44),
+                        },
+                        icon: Color::from_rgb8(163, 163, 163),
+                        placeholder: Color::from_rgb8(115, 115, 115),
+                        value: Color::from_rgb8(245, 245, 245),
+                        selection: Color::from_rgb8(50, 50, 50),
+                    }),
                 button("Create deck").on_press(Message::CreateDeck),
             ]
             .spacing(8),
@@ -1460,12 +1883,11 @@ impl App {
             data.current_streak, data.best_streak
         );
 
-        let range_buttons = row![
-            button("30 days").on_press(Message::SetStatsRange(30)),
-            button("90 days").on_press(Message::SetStatsRange(90)),
-            button("365 days").on_press(Message::SetStatsRange(365)),
-        ]
-        .spacing(8);
+        let range_slider = slider(30.0..=365.0, self.stats_range as f32, |value| {
+            Message::SetStatsRange(value as u32)
+        })
+        .step(5.0_f32)
+        .width(Length::Fill);
 
         let max_forecast = data
             .due_forecast
@@ -1486,7 +1908,11 @@ impl App {
                             112, 112, 112,
                         ))),
                         border: iced::Border::default(),
-                        shadow: iced::Shadow::default(),
+                        shadow: iced::Shadow {
+                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                            offset: iced::Vector::new(0.0, 6.0),
+                            blur_radius: 14.0,
+                        },
                         snap: false,
                         text_color: None,
                     }),
@@ -1529,7 +1955,11 @@ impl App {
                         ))),
                         border: iced::Border::default(),
                         snap: false,
-                        shadow: iced::Shadow::default(),
+                        shadow: iced::Shadow {
+                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
+                            offset: iced::Vector::new(0.0, 6.0),
+                            blur_radius: 14.0,
+                        },
                         text_color: Some(iced::Color::from_rgb8(245, 245, 245)),
                     }),
                 );
@@ -1539,11 +1969,7 @@ impl App {
 
         let content = column![
             text("Stats").size(32),
-            row![
-                text(format!("Range: {} days", self.stats_range)),
-                range_buttons
-            ]
-            .spacing(16),
+            range_slider,
             text(retention_text).size(18),
             text(time_text).size(18),
             text(streak_text).size(18),
@@ -1558,13 +1984,6 @@ impl App {
     }
 
     fn settings_view(&self) -> Element<'_, Message> {
-        let theme_row = row![
-            button("Light").on_press(Message::SetTheme(ThemeMode::Light)),
-            button("Dark").on_press(Message::SetTheme(ThemeMode::Dark)),
-            button("System").on_press(Message::SetTheme(ThemeMode::System)),
-        ]
-        .spacing(8);
-
         let backup_row = row![
             button("Export backup").on_press(Message::BeginExport),
             button("Import backup").on_press(Message::BeginImport),
@@ -1573,8 +1992,6 @@ impl App {
 
         let mut content = column![
             text("Settings").size(32),
-            text(format!("Theme: {:?}", self.theme_mode)).size(16),
-            theme_row,
             text(format!(
                 "Include review history in exports: {}",
                 self.include_review_history
@@ -1596,22 +2013,19 @@ impl App {
     }
 
     pub fn theme(&self) -> Theme {
-        match self.theme_mode {
-            ThemeMode::Dark => Theme::Dark,
-            _ => Theme::Light,
+        Theme::Dark
+    }
+
+    pub fn style(&self, _theme: &Theme) -> iced::theme::Style {
+        iced::theme::Style {
+            background_color: Color::BLACK,
+            text_color: Color::from_rgb8(245, 245, 245),
         }
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
         iced::event::listen().map(Message::Event)
     }
-}
-
-fn nav_button(label: &'static str, target: Screen, _active: Screen) -> Element<'static, Message> {
-    button(text(label).size(16))
-        .width(Length::Fill)
-        .on_press(Message::Navigate(target))
-        .into()
 }
 
 fn rand_u128() -> u128 {
