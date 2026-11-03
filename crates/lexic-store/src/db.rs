@@ -661,9 +661,7 @@ impl Store {
             )
             .optional()?;
         if let Some(id) = existing {
-            return id
-                .parse()
-                .map_err(|_| StoreError::Internal(id.clone()));
+            return id.parse().map_err(|_| StoreError::Internal(id.clone()));
         }
         drop(conn);
 
@@ -800,7 +798,6 @@ impl Store {
         Ok(runs)
     }
 
-
     pub fn add_manual_edit(
         &self,
         project_id: lexic_core::model::Id,
@@ -813,11 +810,16 @@ impl Store {
         conn.execute(
             "INSERT INTO manual_edits (id, project_id, section_id, path, content, created_at)
              VALUES (?1, ?2, NULL, ?3, ?4, ?5)",
-            params![id.to_string(), project_id.to_string(), path, content, now.timestamp()],
+            params![
+                id.to_string(),
+                project_id.to_string(),
+                path,
+                content,
+                now.timestamp()
+            ],
         )?;
         Ok(id)
     }
-
 
     pub fn list_projects(&self) -> Result<Vec<crate::Project>, StoreError> {
         let conn = self.lock()?;
@@ -843,7 +845,6 @@ impl Store {
         }
         Ok(projects)
     }
-
 }
 fn map_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     Ok(Entry {

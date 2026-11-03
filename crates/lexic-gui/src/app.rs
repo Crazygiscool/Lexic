@@ -276,7 +276,7 @@ impl App {
     pub fn new(store: Option<Arc<Store>>, decks: Vec<Deck>) -> (Self, Task<Message>) {
         let dictionary = DictionaryClient::default();
         let app = Self {
-            screen: Screen::Home,
+            screen: Screen::Project,
             sidebar_collapsed: false,
             store,
             dictionary,
@@ -469,14 +469,22 @@ impl App {
                                 target
                             };
                             let project_id = if let Some(store) = store.as_ref() {
-                                Some(store.ensure_project(&path, &target).map_err(|e| e.to_string())?)
+                                Some(
+                                    store
+                                        .ensure_project(&path, &target)
+                                        .map_err(|e| e.to_string())?,
+                                )
                             } else {
                                 None
                             };
                             let run_id = if let (Some(store), Some(project_id)) =
                                 (store.as_ref(), project_id)
                             {
-                                Some(store.start_transpile_run(project_id, &target).map_err(|e| e.to_string())?)
+                                Some(
+                                    store
+                                        .start_transpile_run(project_id, &target)
+                                        .map_err(|e| e.to_string())?,
+                                )
                             } else {
                                 None
                             };
@@ -562,7 +570,8 @@ impl App {
             Message::GsetEditorFileLoaded(result) => {
                 match result {
                     Ok(content) => {
-                        self.gset_editor_content = iced::widget::text_editor::Content::with_text(&content);
+                        self.gset_editor_content =
+                            iced::widget::text_editor::Content::with_text(&content);
                         self.gset_editor_status = Some(String::from("File loaded"));
                     }
                     Err(error) => self.gset_editor_status = Some(error),
@@ -579,9 +588,11 @@ impl App {
                 };
                 Task::perform(
                     async move {
-                        tokio::task::spawn_blocking(move || store.list_projects().map_err(|error| error.to_string()))
-                            .await
-                            .map_err(|error| error.to_string())?
+                        tokio::task::spawn_blocking(move || {
+                            store.list_projects().map_err(|error| error.to_string())
+                        })
+                        .await
+                        .map_err(|error| error.to_string())?
                     },
                     Message::GsetProjectsLoaded,
                 )
@@ -600,7 +611,11 @@ impl App {
             }
             Message::SelectGsetProject(project_id) => {
                 self.gset_selected_project = Some(project_id);
-                if let Some(project) = self.gset_projects.iter().find(|project| project.id == project_id) {
+                if let Some(project) = self
+                    .gset_projects
+                    .iter()
+                    .find(|project| project.id == project_id)
+                {
                     self.gset_project_path = project.root_path.clone();
                     self.gset_target_language = project.target_language.clone();
                 }
@@ -625,8 +640,12 @@ impl App {
                                     .filter(|value| !value.trim().is_empty())
                                     .unwrap_or(".")
                                     .to_string();
-                                let project_id = store.ensure_project(&root, "go").map_err(|error| error.to_string())?;
-                                store.add_manual_edit(project_id, &path, &content).map_err(|error| error.to_string())?;
+                                let project_id = store
+                                    .ensure_project(&root, "go")
+                                    .map_err(|error| error.to_string())?;
+                                store
+                                    .add_manual_edit(project_id, &path, &content)
+                                    .map_err(|error| error.to_string())?;
                             }
                             Ok(())
                         })

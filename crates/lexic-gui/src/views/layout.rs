@@ -5,13 +5,10 @@ use iced::{Alignment, Color, Element, Length, Theme};
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
         let labels = [
-            ("Home", Screen::Home),
-            ("Dictionary", Screen::Search),
-            ("Decks", Screen::Decks),
-            ("Review", Screen::Review),
-            ("Stats", Screen::Stats),
-            ("GSET", Screen::Project),
-            ("Settings", Screen::Settings),
+            ("Transpiler IDE", Screen::Project),
+            ("Review Deck", Screen::Review),
+            ("Grammar Dict", Screen::Search),
+            ("Engine & Interop", Screen::Settings),
         ];
 
         let sidebar_width = if self.sidebar_collapsed {
@@ -63,15 +60,15 @@ impl App {
                 let pressed = matches!(status, iced::widget::button::Status::Pressed);
                 let (background, text_color, border) = if is_active {
                     (
-                        Color::from_rgb8(54, 54, 54),
-                        Color::from_rgb8(245, 245, 245),
-                        Color::from_rgb8(86, 86, 86),
+                        Color::from_rgb8(59, 130, 246),
+                        Color::from_rgb8(15, 23, 42),
+                        Color::from_rgb8(96, 165, 250),
                     )
                 } else if hovered || pressed {
                     (
-                        Color::from_rgb8(34, 34, 34),
-                        Color::from_rgb8(245, 245, 245),
-                        Color::from_rgb8(74, 74, 74),
+                        Color::from_rgb8(51, 65, 85),
+                        Color::from_rgb8(218, 226, 253),
+                        Color::from_rgb8(71, 85, 105),
                     )
                 } else {
                     (
