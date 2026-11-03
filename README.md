@@ -1,6 +1,6 @@
 # Lexic (`lexic`)
 
-A clean, modern, pure-Rust cross-platform dictionary and spaced repetition flashcard desktop application built for fast, offline vocabulary acquisition and study.
+A clean, modern, cross-platform Rust dictionary and spaced repetition flashcard desktop application built for fast, offline vocabulary acquisition and study.
 
 ![Rust](https://img.shields.io/badge/Language-Rust-orange.svg)
 ![GUI](https://img.shields.io/badge/GUI-iced-blue.svg)
@@ -28,7 +28,7 @@ A clean, modern, pure-Rust cross-platform dictionary and spaced repetition flash
 
 ### Prerequisites
 
-Ensure you have the Rust toolchain installed (1.75+ recommended):
+Ensure you have the Rust toolchain installed (stable 1.88+ recommended):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
