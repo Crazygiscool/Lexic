@@ -185,7 +185,10 @@ fn map_entries(
         return Err(DictError::NotFound);
     }
 
-    let entry_id = Uuid::new_v4();
+    let entry_id = Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        format!("dictionaryapi:{}", normalized).as_bytes(),
+    );
     for sense in &mut senses {
         sense.entry_id = entry_id;
     }
