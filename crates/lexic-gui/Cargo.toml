@@ -1,0 +1,28 @@
+[package]
+name = "lexic-gui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[features]
+default = ["ui"]
+ui = ["dep:iced"]
+
+[dependencies]
+lexic-core = { path = "../lexic-core" }
+lexic-store = { path = "../lexic-store" }
+lexic-dict = { path = "../lexic-dict" }
+iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "x11", "wayland", "tokio", "svg", "image", "canvas", "lazy"], optional = true }
+chrono = { workspace = true }
+directories = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "lexic-gui"
+path = "src/main.rs"
