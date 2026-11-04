@@ -5,4 +5,4 @@ pub mod schedule;
 pub mod stats;
 pub mod time;
 
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "1.1.2";
