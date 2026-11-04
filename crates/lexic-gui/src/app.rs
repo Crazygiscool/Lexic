@@ -19,12 +19,12 @@ pub(crate) fn monochrome_button(
         let (background, text_color, border) = match status {
             iced::widget::button::Status::Hovered => (
                 Color::from_rgb8(34, 34, 34),
-                Color::from_rgb8(245, 245, 245),
+                Color::from_rgb8(218, 226, 253),
                 Color::from_rgb8(70, 70, 70),
             ),
             iced::widget::button::Status::Pressed => (
                 Color::from_rgb8(28, 28, 28),
-                Color::from_rgb8(245, 245, 245),
+                Color::from_rgb8(218, 226, 253),
                 Color::from_rgb8(70, 70, 70),
             ),
             iced::widget::button::Status::Disabled => (
@@ -36,7 +36,7 @@ pub(crate) fn monochrome_button(
                 if selected {
                     (
                         Color::from_rgb8(52, 52, 52),
-                        Color::from_rgb8(245, 245, 245),
+                        Color::from_rgb8(218, 226, 253),
                         Color::from_rgb8(82, 82, 82),
                     )
                 } else {
@@ -1467,8 +1467,8 @@ impl App {
 
     pub fn style(&self, _theme: &Theme) -> iced::theme::Style {
         iced::theme::Style {
-            background_color: Color::from_rgb8(15, 23, 42),
-            text_color: Color::from_rgb8(245, 245, 245),
+            background_color: Color::from_rgb8(11, 19, 38),
+            text_color: Color::from_rgb8(218, 226, 253),
         }
     }
 

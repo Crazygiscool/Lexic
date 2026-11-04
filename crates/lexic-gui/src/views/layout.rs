@@ -19,13 +19,13 @@ impl App {
 
         let mut nav_items = column![].spacing(6);
         let brand = if self.sidebar_collapsed {
-            text("L").size(24).color(Color::from_rgb8(245, 245, 245))
+            text("L").size(24).color(Color::from_rgb8(218, 226, 253))
         } else {
             text("Lexic")
                 .size(22)
-                .color(Color::from_rgb8(245, 245, 245))
+                .color(Color::from_rgb8(218, 226, 253))
         };
-        let sidebar_toggle = button(text(">").size(16).color(Color::from_rgb8(245, 245, 245)))
+        let sidebar_toggle = button(text(">").size(16).color(Color::from_rgb8(218, 226, 253)))
             .padding([6, 10])
             .on_press(Message::ToggleSidebar)
             .style(monochrome_button(false));
@@ -50,7 +50,7 @@ impl App {
             let mut nav_button = button(
                 text(nav_label)
                     .size(15)
-                    .color(Color::from_rgb8(245, 245, 245)),
+                    .color(Color::from_rgb8(218, 226, 253)),
             )
             .width(Length::Fill)
             .padding([10, 12])
@@ -60,21 +60,21 @@ impl App {
                 let pressed = matches!(status, iced::widget::button::Status::Pressed);
                 let (background, text_color, border) = if is_active {
                     (
-                        Color::from_rgb8(59, 130, 246),
-                        Color::from_rgb8(15, 23, 42),
+                        Color::from_rgb8(77, 142, 255),
+                        Color::from_rgb8(11, 19, 38),
                         Color::from_rgb8(96, 165, 250),
                     )
                 } else if hovered || pressed {
                     (
                         Color::from_rgb8(51, 65, 85),
                         Color::from_rgb8(218, 226, 253),
-                        Color::from_rgb8(71, 85, 105),
+                        Color::from_rgb8(66, 71, 84),
                     )
                 } else {
                     (
-                        Color::from_rgb8(18, 18, 18),
-                        Color::from_rgb8(225, 225, 225),
-                        Color::from_rgb8(44, 44, 44),
+                        Color::from_rgb8(23, 31, 51),
+                        Color::from_rgb8(194, 198, 214),
+                        Color::from_rgb8(66, 71, 84),
                     )
                 };
                 iced::widget::button::Style {
@@ -102,18 +102,18 @@ impl App {
             .height(Length::Fill)
             .style(|_theme: &Theme| container::Style {
                 snap: false,
-                background: Some(Color::from_rgb8(10, 10, 10).into()),
+                background: Some(Color::from_rgb8(19, 27, 46).into()),
                 border: iced::Border {
                     radius: 0.0.into(),
                     width: 1.0,
-                    color: Color::from_rgb8(30, 30, 30),
+                    color: Color::from_rgb8(34, 42, 61),
                 },
                 shadow: iced::Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
                     offset: iced::Vector::new(0.0, 6.0),
                     blur_radius: 14.0,
                 },
-                text_color: Some(Color::from_rgb8(245, 245, 245)),
+                text_color: Some(Color::from_rgb8(218, 226, 253)),
             });
 
         let search_input = text_input("Search the dictionary…", &self.search_input)
@@ -123,16 +123,16 @@ impl App {
             .width(Length::Fill);
 
         let search_input = search_input.style(|_theme, _status| text_input::Style {
-            background: iced::Background::Color(Color::from_rgb8(15, 15, 15)),
+            background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
             border: iced::Border {
                 radius: 10.0.into(),
                 width: 1.0,
-                color: Color::from_rgb8(44, 44, 44),
+                color: Color::from_rgb8(66, 71, 84),
             },
-            icon: Color::from_rgb8(163, 163, 163),
-            placeholder: Color::from_rgb8(115, 115, 115),
-            value: Color::from_rgb8(245, 245, 245),
-            selection: Color::from_rgb8(50, 50, 50),
+            icon: Color::from_rgb8(194, 198, 214),
+            placeholder: Color::from_rgb8(140, 144, 159),
+            value: Color::from_rgb8(218, 226, 253),
+            selection: Color::from_rgb8(34, 42, 61),
         });
 
         let lookup_button = button(text("Look up").size(14).color(Color::BLACK))
@@ -141,11 +141,11 @@ impl App {
         let lookup_button = lookup_button.style(|_theme, status| {
             let (background, text_color) = match status {
                 iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
-                    (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                    (Color::from_rgb8(194, 198, 214), Color::BLACK)
                 }
                 iced::widget::button::Status::Disabled => (
-                    Color::from_rgb8(60, 60, 60),
-                    Color::from_rgb8(160, 160, 160),
+                    Color::from_rgb8(51, 65, 85),
+                    Color::from_rgb8(140, 144, 159),
                 ),
                 _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
             };
@@ -176,18 +176,18 @@ impl App {
         .width(Length::Fill)
         .style(|_theme: &Theme| container::Style {
             snap: false,
-            background: Some(Color::from_rgb8(10, 10, 10).into()),
+            background: Some(Color::from_rgb8(19, 27, 46).into()),
             border: iced::Border {
                 radius: 0.0.into(),
                 width: 1.0,
-                color: Color::from_rgb8(30, 30, 30),
+                color: Color::from_rgb8(34, 42, 61),
             },
             shadow: iced::Shadow {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
                 offset: iced::Vector::new(0.0, 6.0),
                 blur_radius: 14.0,
             },
-            text_color: Some(Color::from_rgb8(245, 245, 245)),
+            text_color: Some(Color::from_rgb8(218, 226, 253)),
         });
 
         let body: Element<'_, Message> = match self.screen {
@@ -213,14 +213,14 @@ impl App {
             .height(Length::Fill)
             .style(|_theme: &Theme| container::Style {
                 snap: false,
-                background: Some(Color::from_rgb8(15, 23, 42).into()),
+                background: Some(Color::from_rgb8(11, 19, 38).into()),
                 border: iced::Border::default(),
                 shadow: iced::Shadow {
                     color: Color::from_rgba(0.0, 0.0, 0.0, 0.30),
                     offset: iced::Vector::new(0.0, 6.0),
                     blur_radius: 14.0,
                 },
-                text_color: Some(Color::from_rgb8(245, 245, 245)),
+                text_color: Some(Color::from_rgb8(218, 226, 253)),
             })
             .into()
     }

@@ -3,19 +3,24 @@ use iced::widget::{button, container};
 use iced::{Color, Theme};
 
 pub const BG_APP: Color = Color::from_rgb8(11, 19, 38);
-pub const BG_SIDEBAR: Color = Color::from_rgb8(15, 23, 42);
-pub const BG_SURFACE: Color = Color::from_rgb8(30, 41, 59);
-pub const BG_ELEVATED: Color = Color::from_rgb8(51, 65, 85);
-pub const BORDER_SUBTLE: Color = Color::from_rgb8(71, 85, 105);
-pub const BORDER_STRONG: Color = Color::from_rgb8(100, 116, 139);
+pub const BG_SIDEBAR: Color = Color::from_rgb8(19, 27, 46);
+pub const BG_SURFACE: Color = Color::from_rgb8(23, 31, 51);
+pub const BG_ELEVATED: Color = Color::from_rgb8(34, 42, 61);
+pub const BORDER_SUBTLE: Color = Color::from_rgb8(66, 71, 84);
+pub const BORDER_STRONG: Color = Color::from_rgb8(71, 85, 105);
 pub const TEXT_PRIMARY: Color = Color::from_rgb8(218, 226, 253);
 pub const TEXT_SECONDARY: Color = Color::from_rgb8(194, 198, 214);
-pub const TEXT_MUTED: Color = Color::from_rgb8(148, 163, 184);
-pub const ACCENT: Color = Color::from_rgb8(59, 130, 246);
-pub const ACCENT_HOVER: Color = Color::from_rgb8(37, 99, 235);
+pub const TEXT_MUTED: Color = Color::from_rgb8(140, 144, 159);
+pub const BG_SURFACE_HIGHEST: Color = Color::from_rgb8(45, 52, 73);
+pub const SECONDARY: Color = Color::from_rgb8(164, 201, 255);
+pub const SECONDARY_CONTAINER: Color = Color::from_rgb8(2, 103, 184);
+pub const TERTIARY: Color = Color::from_rgb8(78, 222, 163);
+pub const STRUCTURAL: Color = Color::from_rgb8(168, 85, 247);
 pub const SUCCESS: Color = Color::from_rgb8(16, 185, 129);
 pub const WARNING: Color = Color::from_rgb8(245, 158, 11);
-pub const ERROR: Color = Color::from_rgb8(244, 63, 94);
+pub const ERROR: Color = Color::from_rgb8(255, 180, 171);
+pub const ACCENT: Color = Color::from_rgb8(77, 142, 255);
+pub const ACCENT_HOVER: Color = Color::from_rgb8(59, 130, 246);
 
 #[allow(dead_code)]
 pub fn shadow() -> iced::Shadow {

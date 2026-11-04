@@ -29,11 +29,11 @@ impl App {
         container(content)
             .padding(32)
             .style(|_theme| iced::widget::container::Style {
-                background: Some(iced::Color::from_rgb8(30, 41, 59).into()),
+                background: Some(iced::Color::from_rgb8(23, 31, 51).into()),
                 border: iced::Border {
                     radius: 12.0.into(),
                     width: 1.0,
-                    color: iced::Color::from_rgb8(71, 85, 105),
+                    color: iced::Color::from_rgb8(66, 71, 84),
                 },
                 shadow: iced::Shadow {
                     color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.30),

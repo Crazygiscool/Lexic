@@ -13,16 +13,16 @@ impl App {
                     .padding([10, 14])
                     .width(Length::Fill)
                     .style(|_theme, _status| text_input::Style {
-                        background: iced::Background::Color(Color::from_rgb8(15, 15, 15)),
+                        background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
                         border: iced::Border {
                             radius: 10.0.into(),
                             width: 1.0,
-                            color: Color::from_rgb8(44, 44, 44),
+                            color: Color::from_rgb8(66, 71, 84),
                         },
-                        icon: Color::from_rgb8(163, 163, 163),
-                        placeholder: Color::from_rgb8(115, 115, 115),
-                        value: Color::from_rgb8(245, 245, 245),
-                        selection: Color::from_rgb8(50, 50, 50),
+                        icon: Color::from_rgb8(194, 198, 214),
+                        placeholder: Color::from_rgb8(140, 144, 159),
+                        value: Color::from_rgb8(218, 226, 253),
+                        selection: Color::from_rgb8(34, 42, 61),
                     }),
                 button("Create deck").on_press(Message::CreateDeck),
             ]

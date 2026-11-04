@@ -12,14 +12,14 @@ impl App {
             .padding([10, 14])
             .width(Length::Fill)
             .style(|_theme, _status| iced::widget::text_input::Style {
-                background: iced::Background::Color(Color::from_rgb8(30, 41, 59)),
+                background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
                 border: iced::Border {
                     radius: 8.0.into(),
                     width: 1.0,
-                    color: Color::from_rgb8(71, 85, 105),
+                    color: Color::from_rgb8(66, 71, 84),
                 },
-                icon: Color::from_rgb8(148, 163, 184),
-                placeholder: Color::from_rgb8(148, 163, 184),
+                icon: Color::from_rgb8(140, 144, 159),
+                placeholder: Color::from_rgb8(140, 144, 159),
                 value: Color::from_rgb8(218, 226, 253),
                 selection: Color::from_rgb8(51, 65, 85),
             });
@@ -29,14 +29,14 @@ impl App {
             .padding([10, 14])
             .width(Length::Fixed(180.0))
             .style(|_theme, _status| iced::widget::text_input::Style {
-                background: iced::Background::Color(Color::from_rgb8(30, 41, 59)),
+                background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
                 border: iced::Border {
                     radius: 8.0.into(),
                     width: 1.0,
-                    color: Color::from_rgb8(71, 85, 105),
+                    color: Color::from_rgb8(66, 71, 84),
                 },
-                icon: Color::from_rgb8(148, 163, 184),
-                placeholder: Color::from_rgb8(148, 163, 184),
+                icon: Color::from_rgb8(140, 144, 159),
+                placeholder: Color::from_rgb8(140, 144, 159),
                 value: Color::from_rgb8(218, 226, 253),
                 selection: Color::from_rgb8(51, 65, 85),
             });
@@ -46,8 +46,8 @@ impl App {
             .on_press(Message::RunGsetTranspile)
             .style(|_theme, status| {
                 let background = match status {
-                    iced::widget::button::Status::Hovered => Color::from_rgb8(37, 99, 235),
-                    _ => Color::from_rgb8(59, 130, 246),
+                    iced::widget::button::Status::Hovered => Color::from_rgb8(59, 130, 246),
+                    _ => Color::from_rgb8(77, 142, 255),
                 };
                 iced::widget::button::Style {
                     background: Some(background.into()),
@@ -81,7 +81,7 @@ impl App {
                             {
                                 Color::from_rgb8(51, 65, 85)
                             } else {
-                                Color::from_rgb8(30, 41, 59)
+                                Color::from_rgb8(23, 31, 51)
                             }
                             .into(),
                         ),
@@ -89,14 +89,14 @@ impl App {
                         border: iced::Border {
                             radius: 8.0.into(),
                             width: 1.0,
-                            color: Color::from_rgb8(71, 85, 105),
+                            color: Color::from_rgb8(66, 71, 84),
                         },
                         shadow: theme::shadow(),
                         snap: false,
                     }),
                     text(&project.root_path)
                         .size(12)
-                        .color(Color::from_rgb8(148, 163, 184)),
+                        .color(Color::from_rgb8(140, 144, 159)),
                 ]
                 .spacing(8)
                 .align_y(Alignment::Center),
@@ -169,11 +169,11 @@ impl App {
                 .padding(16)
                 .width(Length::Fill)
                 .style(|_theme| iced::widget::container::Style {
-                    background: Some(Color::from_rgb8(30, 41, 59).into()),
+                    background: Some(Color::from_rgb8(23, 31, 51).into()),
                     border: iced::Border {
                         radius: 12.0.into(),
                         width: 1.0,
-                        color: Color::from_rgb8(71, 85, 105),
+                        color: Color::from_rgb8(66, 71, 84),
                     },
                     shadow: theme::shadow(),
                     text_color: Some(TEXT_PRIMARY),
@@ -211,11 +211,11 @@ impl App {
         .padding(16)
         .width(Length::Fill)
         .style(|_theme: &Theme| iced::widget::container::Style {
-            background: Some(Color::from_rgb8(30, 41, 59).into()),
+            background: Some(Color::from_rgb8(23, 31, 51).into()),
             border: iced::Border {
                 radius: 12.0.into(),
                 width: 1.0,
-                color: Color::from_rgb8(71, 85, 105),
+                color: Color::from_rgb8(66, 71, 84),
             },
             shadow: theme::shadow(),
             text_color: Some(TEXT_PRIMARY),

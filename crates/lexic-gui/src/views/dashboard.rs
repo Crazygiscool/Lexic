@@ -10,8 +10,8 @@ impl App {
         let stat_card = |title: &'static str, value: String| -> Element<'_, Message> {
             container(
                 column![
-                    text(title).size(13).color(Color::from_rgb8(163, 163, 163)),
-                    text(value).size(28).color(Color::from_rgb8(245, 245, 245))
+                    text(title).size(13).color(Color::from_rgb8(194, 198, 214)),
+                    text(value).size(28).color(Color::from_rgb8(218, 226, 253))
                 ]
                 .spacing(4),
             )
@@ -19,7 +19,7 @@ impl App {
             .width(Length::Fixed(180.0))
             .style(|_theme: &Theme| container::Style {
                 snap: false,
-                background: Some(Color::from_rgb8(18, 18, 18).into()),
+                background: Some(Color::from_rgb8(23, 31, 51).into()),
                 border: iced::Border {
                     radius: 16.0.into(),
                     width: 1.0,
@@ -30,7 +30,7 @@ impl App {
                     offset: iced::Vector::new(0.0, 6.0),
                     blur_radius: 14.0,
                 },
-                text_color: Some(Color::from_rgb8(245, 245, 245)),
+                text_color: Some(Color::from_rgb8(218, 226, 253)),
             })
             .into()
         };
@@ -38,10 +38,10 @@ impl App {
         let mut content = column![
             text("Welcome to Lexic")
                 .size(36)
-                .color(Color::from_rgb8(245, 245, 245)),
+                .color(Color::from_rgb8(218, 226, 253)),
             text("Search from the bar above or jump back into your study flow.")
                 .size(15)
-                .color(Color::from_rgb8(163, 163, 163)),
+                .color(Color::from_rgb8(194, 198, 214)),
             row![
                 stat_card("Decks", self.decks.len().to_string()),
                 stat_card("Due cards", due_cards.to_string()),
@@ -57,7 +57,7 @@ impl App {
                         let (background, text_color) = match status {
                             iced::widget::button::Status::Hovered
                             | iced::widget::button::Status::Pressed => {
-                                (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                                (Color::from_rgb8(194, 198, 214), Color::BLACK)
                             }
                             _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
                         };
@@ -86,7 +86,7 @@ impl App {
                         let (background, text_color) = match status {
                             iced::widget::button::Status::Hovered
                             | iced::widget::button::Status::Pressed => {
-                                (Color::from_rgb8(225, 225, 225), Color::BLACK)
+                                (Color::from_rgb8(194, 198, 214), Color::BLACK)
                             }
                             _ => (Color::from_rgb8(236, 236, 236), Color::BLACK),
                         };
@@ -118,13 +118,13 @@ impl App {
                     column![
                         text("Last looked up")
                             .size(13)
-                            .color(Color::from_rgb8(163, 163, 163)),
+                            .color(Color::from_rgb8(194, 198, 214)),
                         text(&entry.word)
                             .size(24)
-                            .color(Color::from_rgb8(245, 245, 245)),
+                            .color(Color::from_rgb8(218, 226, 253)),
                         text(&entry.source)
                             .size(12)
-                            .color(Color::from_rgb8(115, 115, 115)),
+                            .color(Color::from_rgb8(140, 144, 159)),
                     ]
                     .spacing(4),
                 )
@@ -132,7 +132,7 @@ impl App {
                 .width(Length::Fill)
                 .style(|_theme: &Theme| container::Style {
                     snap: false,
-                    background: Some(Color::from_rgb8(18, 18, 18).into()),
+                    background: Some(Color::from_rgb8(23, 31, 51).into()),
                     border: iced::Border {
                         radius: 16.0.into(),
                         width: 1.0,
@@ -143,7 +143,7 @@ impl App {
                         offset: iced::Vector::new(0.0, 6.0),
                         blur_radius: 14.0,
                     },
-                    text_color: Some(Color::from_rgb8(245, 245, 245)),
+                    text_color: Some(Color::from_rgb8(218, 226, 253)),
                 }),
             );
         }
