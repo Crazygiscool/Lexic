@@ -92,6 +92,36 @@ fn parse_diagnostics(stderr: &str) -> Vec<GsetDiagnostic> {
         .collect()
 }
 
+#[derive(Debug, Clone)]
+pub struct GsetBridgeStatus {
+    pub path: std::path::PathBuf,
+    pub available: bool,
+    pub version: Option<String>,
+}
+
+pub fn resolve_bridge() -> GsetBridgeStatus {
+    let path = gset_binary();
+    if !path.exists() && !std::env::var_os("GSET_BINARY").is_some() {
+        // Still try PATH resolution via `gset --version`; treat bare "gset" specially.
+    }
+    let output = std::process::Command::new(&path).arg("version").output();
+    match output {
+        Ok(output) if output.status.success() => GsetBridgeStatus {
+            path,
+            available: true,
+            version: String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .strip_prefix("GSET ")
+                .map(ToOwned::to_owned),
+        },
+        _ => GsetBridgeStatus {
+            path: path.clone(),
+            available: path.exists() || std::env::var_os("GSET_BINARY").is_some(),
+            version: None,
+        },
+    }
+}
+
 pub fn is_available() -> bool {
-    gset_binary().components().count() > 0
+    resolve_bridge().available
 }
