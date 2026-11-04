@@ -19,7 +19,7 @@ tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
-
+iced_fonts = { version = "0.3", default-features = false, features = ["lucide"] }
 [lints]
 workspace = true
 
