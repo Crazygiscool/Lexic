@@ -42,15 +42,12 @@ jobs:
       - name: Build release binary
         run: cargo build --release -p lexic-gui
 
-      - name: Install cargo-packager
-        run: cargo install cargo-packager --locked
-
       - name: Package Linux assets
         if: runner.os == 'Linux'
         run: |
-          cargo packager --release --config Packager.toml --formats deb,appimage,pacman --out-dir dist
           mkdir -p dist/lexic-linux-x86_64
           cp target/release/lexic-gui dist/lexic-linux-x86_64/lexic
+          chmod +x dist/lexic-linux-x86_64/lexic
           cp README.md dist/lexic-linux-x86_64/ 2>/dev/null || true
           tar -czf dist/lexic-linux-x86_64.tar.gz -C dist lexic-linux-x86_64
           rm -rf dist/lexic-linux-x86_64
@@ -58,10 +55,11 @@ jobs:
       - name: Package macOS assets
         if: runner.os == 'macOS'
         run: |
-          cargo packager --release --config Packager.toml --formats app,dmg --out-dir dist
-          APP_PATH="$(find dist -maxdepth 2 -type d -name '*.app' | head -n 1)"
-          test -n "$APP_PATH"
-          (cd dist && zip -r lexic-macos.zip "$(basename "$APP_PATH")")
+          mkdir -p dist
+          cp target/release/lexic-gui dist/lexic-macos
+          chmod +x dist/lexic-macos
+          (cd dist && zip lexic-macos.zip lexic-macos)
+          rm -f dist/lexic-macos
 
       - name: Package Windows assets
         if: runner.os == 'Windows'
