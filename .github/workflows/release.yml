@@ -16,8 +16,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
