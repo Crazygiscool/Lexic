@@ -453,6 +453,49 @@ impl Store {
         Ok((total, new_cards, due))
     }
 
+    pub fn storage_stats(&self, now: DateTime<Utc>) -> Result<crate::StorageStats, StoreError> {
+        let conn = self.lock()?;
+        let journal_mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
+        let foreign_keys: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
+        let page_size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+        let page_count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+        let freelist_count: i64 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        let entry_count: i64 = conn.query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))?;
+        let sense_count: i64 = conn.query_row("SELECT COUNT(*) FROM senses", [], |r| r.get(0))?;
+        let deck_count: i64 = conn.query_row("SELECT COUNT(*) FROM decks", [], |r| r.get(0))?;
+        let card_count: i64 = conn.query_row("SELECT COUNT(*) FROM cards", [], |r| r.get(0))?;
+        let review_count: i64 = conn.query_row("SELECT COUNT(*) FROM reviews", [], |r| r.get(0))?;
+        let due_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM cards WHERE state IN ('learning','review','relearning') AND due_at <= ?1",
+            params![now.timestamp()],
+            |r| r.get(0),
+        )?;
+        let integrity: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap_or_else(|_| String::from("unknown"));
+        Ok(crate::StorageStats {
+            sqlite_version: rusqlite::version().to_string(),
+            journal_mode,
+            foreign_keys: foreign_keys != 0,
+            page_size,
+            page_count,
+            freelist_count,
+            entry_count,
+            sense_count,
+            deck_count,
+            card_count,
+            review_count,
+            due_count,
+            integrity,
+        })
+    }
+
+    pub fn vacuum(&self) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute_batch("VACUUM;")?;
+        Ok(())
+    }
+
     pub fn remove_card(&self, card_id: Id) -> Result<(), StoreError> {
         let conn = self.lock()?;
         conn.execute(
