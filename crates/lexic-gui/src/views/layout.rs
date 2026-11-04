@@ -123,10 +123,18 @@ impl App {
         let nav = column![
             nav_link(
                 self,
+                Screen::Home,
+                layout_dashboard(),
+                "Home",
+                "\u{2325}1",
+                None
+            ),
+            nav_link(
+                self,
                 Screen::Project,
                 code(),
                 "Transpiler IDE",
-                "\u{2325}1",
+                "\u{2325}2",
                 None
             ),
             nav_link(
@@ -142,7 +150,7 @@ impl App {
                 Screen::Search,
                 book_open(),
                 "Grammar Dict",
-                "\u{2325}3",
+                "\u{2325}4",
                 None
             ),
             nav_link(
@@ -150,7 +158,7 @@ impl App {
                 Screen::Settings,
                 settings(),
                 "Engine & Interop",
-                "\u{2325}4",
+                "\u{2325}5",
                 None
             ),
         ]
@@ -355,11 +363,12 @@ impl App {
 
         // Content
         let content: Element<'_, Message> = match self.screen {
+            Screen::Home => self.home_view(),
             Screen::Project => self.project_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),
-            _ => self.project_view(),
+            _ => self.home_view(),
         };
 
         let body = container(content).width(Length::Fill).height(Length::Fill);

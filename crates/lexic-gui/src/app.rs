@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
+#![allow(clippy::single_match)]
 #![allow(dead_code)]
 
 use lexic_core::model::{Card, Deck, Entry, Sense};
@@ -156,8 +157,17 @@ pub struct App {
     pub(crate) database_path: Option<std::path::PathBuf>,
     pub(crate) storage_stats: Option<lexic_store::StorageStats>,
 
+    pub(crate) home_words: Vec<Entry>,
+    pub(crate) home_due: Vec<lexic_store::DueCardPreview>,
+    pub(crate) home_ticker_offset: f32,
     pub(crate) review: Option<ReviewSession>,
     pub(crate) review_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HomeFeed {
+    pub words: Vec<Entry>,
+    pub due: Vec<lexic_store::DueCardPreview>,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +210,14 @@ pub struct UndoSnapshot {
 pub enum Message {
     Navigate(Screen),
     FindToken,
+    RefreshHome,
+    LoadHomeFeed,
+    HomeFeedLoaded(HomeFeed),
+    ShuffleHomeWords,
+    HomeWordsLoaded(Vec<Entry>),
+    HomeTick,
+    OpenWord(lexic_core::model::Id),
+    WordOpened(Option<Entry>, Vec<Sense>),
     ToggleSidebar,
     GsetProjectPathChanged(String),
     GsetTargetLanguageChanged(String),
@@ -259,6 +277,7 @@ pub enum Message {
 
     OpenDeckDetail(lexic_core::model::Id),
     LoadStats,
+    LoadStorageStats,
     StatsLoaded(StatsSnapshot),
     SetStatsRange(u32),
     DeckDetailLoaded(Vec<DeckCard>),
@@ -302,8 +321,8 @@ impl App {
         decks: Vec<Deck>,
     ) -> (Self, Task<Message>) {
         let dictionary = DictionaryClient::default();
-        let app = Self {
-            screen: Screen::Project,
+        let mut app = Self {
+            screen: Screen::Home,
             sidebar_collapsed: false,
             store,
             dictionary,
@@ -352,6 +371,9 @@ impl App {
             database_path: database_path.clone(),
             storage_stats: None,
 
+            home_words: Vec::new(),
+            home_due: Vec::new(),
+            home_ticker_offset: 0.0,
             review: None,
             review_status: None,
         };
@@ -381,7 +403,8 @@ impl App {
         } else {
             Task::none()
         };
-        (app, task)
+        let launch = app.update(Message::RefreshHome);
+        (app, Task::batch([task, launch]))
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -528,8 +551,8 @@ impl App {
                 if screen == Screen::Settings {
                     return self.update(Message::LoadSettings);
                 }
-                if screen == Screen::Stats {
-                    return self.update(Message::LoadStats);
+                if screen == Screen::Home {
+                    return self.update(Message::RefreshHome);
                 }
                 if screen == Screen::Project {
                     return self.update(Message::LoadGsetProjects);
@@ -794,40 +817,59 @@ impl App {
                 Task::none()
             }
             Message::Event(event) => {
-                if let iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
-                    if let Screen::Review = self.screen {
-                        if let Some(session) = &mut self.review {
-                            if let Some(_current) = session.current {
-                                match key {
-                                    keyboard::Key::Named(keyboard::key::Named::Space) => {
-                                        if !session.revealed {
-                                            session.revealed = true;
+                if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) = event
+                {
+                    if modifiers.alt() {
+                        match key {
+                            keyboard::Key::Character(ref value) => match value.as_ref() {
+                                "1" => return self.update(Message::Navigate(Screen::Home)),
+                                "2" => return self.update(Message::Navigate(Screen::Project)),
+                                "3" => return self.update(Message::Navigate(Screen::Review)),
+                                "4" => return self.update(Message::Navigate(Screen::Search)),
+                                "5" => return self.update(Message::Navigate(Screen::Settings)),
+                                _ => {}
+                            },
+                            _ => {}
+                        }
+                    }
+                    if modifiers.is_empty() {
+                        if let Screen::Review = self.screen {
+                            if let Some(session) = &mut self.review {
+                                if let Some(_current) = session.current {
+                                    match key {
+                                        keyboard::Key::Named(keyboard::key::Named::Space) => {
+                                            if !session.revealed {
+                                                session.revealed = true;
+                                            }
                                         }
-                                    }
-                                    keyboard::Key::Character(value) => match value.as_ref() {
-                                        "1" => {
-                                            return self.update(Message::Grade(
-                                                lexic_core::model::Rating::Again,
-                                            ));
-                                        }
-                                        "2" => {
-                                            return self.update(Message::Grade(
-                                                lexic_core::model::Rating::Hard,
-                                            ));
-                                        }
-                                        "3" => {
-                                            return self.update(Message::Grade(
-                                                lexic_core::model::Rating::Good,
-                                            ));
-                                        }
-                                        "4" => {
-                                            return self.update(Message::Grade(
-                                                lexic_core::model::Rating::Easy,
-                                            ));
-                                        }
+                                        keyboard::Key::Character(ref value) => match value.as_ref()
+                                        {
+                                            "1" => {
+                                                return self.update(Message::Grade(
+                                                    lexic_core::model::Rating::Again,
+                                                ));
+                                            }
+                                            "2" => {
+                                                return self.update(Message::Grade(
+                                                    lexic_core::model::Rating::Hard,
+                                                ));
+                                            }
+                                            "3" => {
+                                                return self.update(Message::Grade(
+                                                    lexic_core::model::Rating::Good,
+                                                ));
+                                            }
+                                            "4" => {
+                                                return self.update(Message::Grade(
+                                                    lexic_core::model::Rating::Easy,
+                                                ));
+                                            }
+                                            _ => {}
+                                        },
                                         _ => {}
-                                    },
-                                    _ => {}
+                                    }
                                 }
                             }
                         }
@@ -1099,6 +1141,97 @@ impl App {
             Message::StatsLoaded(data) => {
                 self.stats_data = Some(data);
                 Task::none()
+            }
+            Message::LoadStorageStats => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move { store.storage_stats(now_utc()).unwrap_or_default() },
+                    Message::StorageStatsLoaded,
+                )
+            }
+            Message::LoadHomeFeed => {
+                let Some(store) = self.store.clone() else {
+                    self.home_words.clear();
+                    self.home_due.clear();
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        let now = now_utc();
+                        let words = store.random_entries(24).unwrap_or_default();
+                        let due = store.due_cards_preview(now, 8).unwrap_or_default();
+                        HomeFeed { words, due }
+                    },
+                    Message::HomeFeedLoaded,
+                )
+            }
+            Message::HomeFeedLoaded(feed) => {
+                self.home_words = feed.words;
+                self.home_due = feed.due;
+                self.home_ticker_offset = 0.0;
+                Task::none()
+            }
+            Message::ShuffleHomeWords => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move { store.random_entries(24).unwrap_or_default() },
+                    Message::HomeWordsLoaded,
+                )
+            }
+            Message::HomeWordsLoaded(words) => {
+                self.home_words = words;
+                self.home_ticker_offset = 0.0;
+                Task::none()
+            }
+            Message::HomeTick => {
+                if self.screen != Screen::Home || self.home_words.is_empty() {
+                    return Task::none();
+                }
+                let slot = 180.0_f32;
+                let total = self.home_words.len() as f32 * slot;
+                if total > 0.0 {
+                    self.home_ticker_offset = (self.home_ticker_offset + 1.2) % total;
+                }
+                Task::none()
+            }
+            Message::OpenWord(entry_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        let entry = store.get_entry(entry_id).ok().flatten();
+                        let senses = entry
+                            .as_ref()
+                            .map(|entry| store.get_senses(entry.id).unwrap_or_default())
+                            .unwrap_or_default();
+                        (entry, senses)
+                    },
+                    |(entry, senses)| Message::WordOpened(entry, senses),
+                )
+            }
+            Message::WordOpened(entry, senses) => {
+                if let Some(entry) = entry {
+                    self.active_entry = Some(entry);
+                    self.active_senses = senses;
+                    self.dictionary_pos_filter = None;
+                    self.search_status = SearchStatus::Loaded;
+                    self.screen = Screen::Search;
+                }
+                Task::none()
+            }
+            Message::RefreshHome => {
+                let tasks = [
+                    self.update(Message::LoadHomeFeed),
+                    self.update(Message::LoadStats),
+                    self.update(Message::ReloadDecks),
+                    self.update(Message::LoadStorageStats),
+                ];
+                Task::batch(tasks)
             }
             Message::SetStatsRange(range) => {
                 self.stats_range = range;
@@ -1488,8 +1621,7 @@ impl App {
             Message::EndReview => {
                 self.review = None;
                 self.review_status = Some(String::from("Review session ended"));
-                self.screen = Screen::Home;
-                Task::none()
+                self.update(Message::Navigate(Screen::Home))
             }
         }
     }
@@ -1613,7 +1745,12 @@ impl App {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::event::listen().map(Message::Event)
+        let ticker = if self.screen == Screen::Home && !self.home_words.is_empty() {
+            iced::time::every(std::time::Duration::from_millis(33)).map(|_| Message::HomeTick)
+        } else {
+            iced::Subscription::none()
+        };
+        iced::Subscription::batch([iced::event::listen().map(Message::Event), ticker])
     }
 }
 
