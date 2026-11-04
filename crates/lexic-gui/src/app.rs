@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
+#![allow(dead_code)]
 
 use lexic_core::model::{Card, Deck, Entry, Sense};
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
@@ -115,6 +116,7 @@ pub struct App {
     pub(crate) search_status: SearchStatus,
     pub(crate) active_entry: Option<Entry>,
     pub(crate) active_senses: Vec<Sense>,
+    pub(crate) dictionary_pos_filter: Option<String>,
     pub(crate) selected_save_deck: Option<lexic_core::model::Id>,
     pub(crate) save_status: Option<String>,
 
@@ -129,12 +131,17 @@ pub struct App {
     #[allow(dead_code)]
     pub(crate) theme_mode: ThemeMode,
     pub(crate) include_review_history: bool,
+    pub(crate) import_mode: lexic_store::ImportMode,
     pub(crate) settings_status: Option<String>,
     pub(crate) stats_range: u32,
     pub(crate) stats_data: Option<StatsSnapshot>,
 
     pub(crate) gset_project_path: String,
     pub(crate) gset_target_language: String,
+    pub(crate) gset_source_language: String,
+    pub(crate) gset_output_path: String,
+    pub(crate) gset_verbose: bool,
+    pub(crate) gset_experimental_api_map: bool,
     pub(crate) gset_status: Option<String>,
     pub(crate) gset_result: Option<crate::gset::GsetRunResult>,
 
@@ -144,6 +151,10 @@ pub struct App {
     pub(crate) gset_editor_path: String,
     pub(crate) gset_editor_content: iced::widget::text_editor::Content,
     pub(crate) gset_editor_status: Option<String>,
+
+    pub(crate) gset_bridge: crate::gset::GsetBridgeStatus,
+    pub(crate) database_path: Option<std::path::PathBuf>,
+    pub(crate) storage_stats: Option<lexic_store::StorageStats>,
 
     pub(crate) review: Option<ReviewSession>,
     pub(crate) review_status: Option<String>,
@@ -188,9 +199,14 @@ pub struct UndoSnapshot {
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     Navigate(Screen),
+    FindToken,
     ToggleSidebar,
     GsetProjectPathChanged(String),
     GsetTargetLanguageChanged(String),
+    GsetSourceLanguageChanged(String),
+    GsetOutputPathChanged(String),
+    GsetVerboseToggled,
+    GsetExperimentalToggled,
     RunGsetTranspile,
     GsetTranspileFinished(Result<crate::gset::GsetRunResult, String>),
     LoadGsetProjects,
@@ -204,6 +220,7 @@ pub enum Message {
     SaveGsetEditorFinished(Result<(), String>),
     Event(iced::Event),
     SearchInputChanged(String),
+    DictionaryPosFilterChanged(Option<String>),
     Lookup,
     LookupFinished(u64, Result<LookupResult, String>),
     SelectSaveDeck(lexic_core::model::Id),
@@ -212,6 +229,11 @@ pub enum Message {
     LoadSettings,
     SettingsLoaded(Option<String>),
     ToggleIncludeReviewHistory,
+    SetImportMode(lexic_store::ImportMode),
+    VacuumDatabase,
+    VacuumFinished(Result<(), String>),
+    VerifyDatabase,
+    VerifyFinished(String),
     BeginExport,
     ExportPathChosen(Option<std::path::PathBuf>),
     ExportFinished(Result<(), String>),
@@ -233,6 +255,7 @@ pub enum Message {
     DeckActionFinished(Result<(), String>),
     ReloadDecks,
     DecksReloaded(Vec<Deck>, Vec<(lexic_core::model::Id, (i64, i64, i64))>),
+    StorageStatsLoaded(lexic_store::StorageStats),
 
     OpenDeckDetail(lexic_core::model::Id),
     LoadStats,
@@ -273,7 +296,11 @@ pub struct DailyStat {
 }
 
 impl App {
-    pub fn new(store: Option<Arc<Store>>, decks: Vec<Deck>) -> (Self, Task<Message>) {
+    pub fn new(
+        store: Option<Arc<Store>>,
+        database_path: Option<std::path::PathBuf>,
+        decks: Vec<Deck>,
+    ) -> (Self, Task<Message>) {
         let dictionary = DictionaryClient::default();
         let app = Self {
             screen: Screen::Project,
@@ -287,6 +314,7 @@ impl App {
             search_status: SearchStatus::Idle,
             active_entry: None,
             active_senses: Vec::new(),
+            dictionary_pos_filter: None,
             selected_save_deck: None,
             save_status: None,
             new_deck_name: String::new(),
@@ -299,12 +327,17 @@ impl App {
             deck_card_status: None,
             theme_mode: ThemeMode::Light,
             include_review_history: false,
+            import_mode: lexic_store::ImportMode::default(),
             settings_status: None,
             stats_range: 30,
             stats_data: None,
 
             gset_project_path: String::new(),
             gset_target_language: String::from("go"),
+            gset_source_language: String::new(),
+            gset_output_path: String::new(),
+            gset_verbose: true,
+            gset_experimental_api_map: false,
             gset_status: None,
             gset_result: None,
 
@@ -314,25 +347,37 @@ impl App {
             gset_editor_path: String::new(),
             gset_editor_content: iced::widget::text_editor::Content::new(),
             gset_editor_status: None,
+
+            gset_bridge: crate::gset::resolve_bridge(),
+            database_path: database_path.clone(),
+            storage_stats: None,
+
             review: None,
             review_status: None,
         };
         let task = if let Some(store) = app.store.clone() {
-            Task::perform(
-                async move {
-                    let now = now_utc();
-                    let decks = store.list_decks().unwrap_or_default();
-                    let counts = decks
-                        .iter()
-                        .map(|deck| {
-                            let counts = store.deck_counts(deck.id, now).unwrap_or((0, 0, 0));
-                            (deck.id, counts)
-                        })
-                        .collect();
-                    (decks, counts)
-                },
-                |value| Message::DecksReloaded(value.0, value.1),
-            )
+            let store_for_stats = store.clone();
+            Task::batch([
+                Task::perform(
+                    async move {
+                        let now = now_utc();
+                        let decks = store.list_decks().unwrap_or_default();
+                        let counts = decks
+                            .iter()
+                            .map(|deck| {
+                                let counts = store.deck_counts(deck.id, now).unwrap_or((0, 0, 0));
+                                (deck.id, counts)
+                            })
+                            .collect();
+                        (decks, counts)
+                    },
+                    |value| Message::DecksReloaded(value.0, value.1),
+                ),
+                Task::perform(
+                    async move { store_for_stats.storage_stats(now_utc()).unwrap_or_default() },
+                    Message::StorageStatsLoaded,
+                ),
+            ])
         } else {
             Task::none()
         };
@@ -395,6 +440,57 @@ impl App {
                 });
                 Task::none()
             }
+            Message::SetImportMode(mode) => {
+                self.import_mode = mode;
+                Task::none()
+            }
+            Message::VacuumDatabase => {
+                let Some(store) = self.store.clone() else {
+                    self.settings_status = Some(String::from("Database is not ready"));
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            store.vacuum().map_err(|error| error.to_string())
+                        })
+                        .await
+                        .map_err(|error| error.to_string())?
+                    },
+                    Message::VacuumFinished,
+                )
+            }
+            Message::VacuumFinished(result) => {
+                self.settings_status = Some(match result {
+                    Ok(()) => String::from("Database vacuumed"),
+                    Err(error) => error,
+                });
+                Task::none()
+            }
+            Message::VerifyDatabase => {
+                let Some(store) = self.store.clone() else {
+                    self.settings_status = Some(String::from("Database is not ready"));
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            store
+                                .storage_stats(now_utc())
+                                .map(|stats| stats.integrity)
+                                .unwrap_or_else(|error| error.to_string())
+                        })
+                        .await
+                        .map_err(|error| error.to_string())
+                        .unwrap_or_else(|error| error)
+                    },
+                    Message::VerifyFinished,
+                )
+            }
+            Message::VerifyFinished(result) => {
+                self.settings_status = Some(format!("Integrity check: {result}"));
+                Task::none()
+            }
             Message::BeginImport => Task::perform(
                 async {
                     rfd::AsyncFileDialog::new()
@@ -410,9 +506,10 @@ impl App {
                     self.settings_status = Some(String::from("Database is not ready"));
                     return Task::none();
                 };
+                let mode = self.import_mode;
                 Task::perform(
                     async move {
-                        lexic_store::import_backup(&store, &path, lexic_store::ImportMode::Merge)
+                        lexic_store::import_backup(&store, &path, mode)
                             .map_err(|error| error.to_string())
                     },
                     Message::ImportFinished,
@@ -443,12 +540,32 @@ impl App {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
                 Task::none()
             }
+            Message::StorageStatsLoaded(stats) => {
+                self.storage_stats = Some(stats);
+                Task::none()
+            }
             Message::GsetProjectPathChanged(value) => {
                 self.gset_project_path = value;
                 Task::none()
             }
             Message::GsetTargetLanguageChanged(value) => {
                 self.gset_target_language = value;
+                Task::none()
+            }
+            Message::GsetSourceLanguageChanged(value) => {
+                self.gset_source_language = value;
+                Task::none()
+            }
+            Message::GsetOutputPathChanged(value) => {
+                self.gset_output_path = value;
+                Task::none()
+            }
+            Message::GsetVerboseToggled => {
+                self.gset_verbose = !self.gset_verbose;
+                Task::none()
+            }
+            Message::GsetExperimentalToggled => {
+                self.gset_experimental_api_map = !self.gset_experimental_api_map;
                 Task::none()
             }
             Message::RunGsetTranspile => {
@@ -458,6 +575,10 @@ impl App {
                     return Task::none();
                 }
                 let target = self.gset_target_language.trim().to_string();
+                let source = self.gset_source_language.trim().to_string();
+                let output = self.gset_output_path.trim().to_string();
+                let verbose = self.gset_verbose;
+                let experimental = self.gset_experimental_api_map;
                 self.gset_status = Some(String::from("Running GSET transpilation..."));
                 let store = self.store.clone();
                 Task::perform(
@@ -489,13 +610,23 @@ impl App {
                                 None
                             };
 
+                            let source_arg = if source.is_empty() {
+                                None
+                            } else {
+                                Some(source.as_str())
+                            };
+                            let output_arg = if output.is_empty() {
+                                None
+                            } else {
+                                Some(std::path::Path::new(&output))
+                            };
                             let result = crate::gset::transpile(
                                 std::path::Path::new(&path),
                                 &target,
-                                None,
-                                None,
-                                true,
-                                false,
+                                source_arg,
+                                output_arg,
+                                verbose,
+                                experimental,
                             )?;
 
                             if let (Some(store), Some(run_id)) = (store.as_ref(), run_id) {
@@ -717,6 +848,7 @@ impl App {
                     Ok(lookup) => {
                         self.active_entry = Some(lookup.entry);
                         self.active_senses = lookup.senses;
+                        self.dictionary_pos_filter = None;
                         self.search_status = SearchStatus::Loaded;
                         self.screen = Screen::Search;
                     }
@@ -729,6 +861,10 @@ impl App {
             }
             Message::SelectSaveDeck(deck_id) => {
                 self.selected_save_deck = Some(deck_id);
+                Task::none()
+            }
+            Message::DictionaryPosFilterChanged(value) => {
+                self.dictionary_pos_filter = value;
                 Task::none()
             }
             Message::SaveActiveEntry => self.save_active_entry(),
@@ -897,6 +1033,10 @@ impl App {
                     self.selected_deck = None;
                 }
                 self.update(Message::ReloadDecks)
+            }
+            Message::FindToken => {
+                self.screen = Screen::Search;
+                Task::none()
             }
             Message::LoadStats => {
                 let Some(store) = self.store.clone() else {

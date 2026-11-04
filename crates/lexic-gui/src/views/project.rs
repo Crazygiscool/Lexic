@@ -1,231 +1,379 @@
 use crate::app::*;
-
-use crate::theme::{self, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY};
+use crate::components;
+use crate::theme;
 use iced::widget::text_editor;
-use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Length, Theme};
+use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
+use iced::{Element, Length};
+use iced_fonts::lucide::*;
 
 impl App {
     pub fn project_view(&self) -> Element<'_, Message> {
-        let path_input = text_input("Project path", &self.gset_project_path)
-            .on_input(Message::GsetProjectPathChanged)
-            .padding([10, 14])
-            .width(Length::Fill)
-            .style(|_theme, _status| iced::widget::text_input::Style {
-                background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
-                border: iced::Border {
-                    radius: 8.0.into(),
-                    width: 1.0,
-                    color: Color::from_rgb8(66, 71, 84),
-                },
-                icon: Color::from_rgb8(140, 144, 159),
-                placeholder: Color::from_rgb8(140, 144, 159),
-                value: Color::from_rgb8(218, 226, 253),
-                selection: Color::from_rgb8(51, 65, 85),
-            });
+        let project_input =
+            text_input("Project path or file to transpile", &self.gset_project_path)
+                .on_input(Message::GsetProjectPathChanged)
+                .padding([8, 12])
+                .width(Length::Fill)
+                .style(theme::themed_input());
 
-        let target_input = text_input("Target language", &self.gset_target_language)
+        let source_input = text_input("from (optional)", &self.gset_source_language)
+            .on_input(Message::GsetSourceLanguageChanged)
+            .padding([8, 12])
+            .width(Length::Fixed(150.0))
+            .style(theme::themed_input());
+
+        let target_input = text_input("to", &self.gset_target_language)
             .on_input(Message::GsetTargetLanguageChanged)
-            .padding([10, 14])
-            .width(Length::Fixed(180.0))
-            .style(|_theme, _status| iced::widget::text_input::Style {
-                background: iced::Background::Color(Color::from_rgb8(23, 31, 51)),
-                border: iced::Border {
-                    radius: 8.0.into(),
-                    width: 1.0,
-                    color: Color::from_rgb8(66, 71, 84),
-                },
-                icon: Color::from_rgb8(140, 144, 159),
-                placeholder: Color::from_rgb8(140, 144, 159),
-                value: Color::from_rgb8(218, 226, 253),
-                selection: Color::from_rgb8(51, 65, 85),
-            });
+            .padding([8, 12])
+            .width(Length::Fixed(120.0))
+            .style(theme::themed_input());
 
-        let run_button = button(text("Transpile project").size(14).color(Color::WHITE))
-            .padding([10, 16])
-            .on_press(Message::RunGsetTranspile)
-            .style(|_theme, status| {
-                let background = match status {
-                    iced::widget::button::Status::Hovered => Color::from_rgb8(59, 130, 246),
-                    _ => Color::from_rgb8(77, 142, 255),
-                };
-                iced::widget::button::Style {
-                    background: Some(background.into()),
-                    text_color: Color::WHITE,
-                    border: iced::Border {
-                        radius: 8.0.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                    shadow: theme::shadow(),
-                    snap: false,
+        let output_input = text_input("output path (optional)", &self.gset_output_path)
+            .on_input(Message::GsetOutputPathChanged)
+            .padding([8, 12])
+            .width(Length::Fixed(260.0))
+            .style(theme::themed_input());
+
+        let verbose_button = button(
+            text(if self.gset_verbose {
+                "verbose: on"
+            } else {
+                "verbose: off"
+            })
+            .size(11)
+            .font(theme::font_code())
+            .color(if self.gset_verbose {
+                theme::ON_PRIMARY_CONTAINER
+            } else {
+                theme::TEXT_MUTED
+            }),
+        )
+        .padding([8, 12])
+        .style(theme::button_style(self.gset_verbose))
+        .on_press(Message::GsetVerboseToggled);
+
+        let experimental_button = button(
+            text(if self.gset_experimental_api_map {
+                "experimental api map: on"
+            } else {
+                "experimental api map: off"
+            })
+            .size(11)
+            .font(theme::font_code())
+            .color(if self.gset_experimental_api_map {
+                theme::ON_PRIMARY_CONTAINER
+            } else {
+                theme::TEXT_MUTED
+            }),
+        )
+        .padding([8, 12])
+        .style(theme::button_style(self.gset_experimental_api_map))
+        .on_press(Message::GsetExperimentalToggled);
+
+        let run_button = button(
+            row![
+                play().size(14).color(theme::ON_PRIMARY_CONTAINER),
+                text("Run Transpiler")
+                    .size(12)
+                    .color(theme::ON_PRIMARY_CONTAINER)
+                    .font(theme::font_code()),
+                components::kbd("F5"),
+            ]
+            .spacing(6)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding([8, 14])
+        .style(theme::primary_button())
+        .on_press(Message::RunGsetTranspile);
+
+        let status_line = row![
+            components::status_dot(
+                if self.gset_status.as_deref().unwrap_or("").contains("failed") {
+                    theme::ERROR
+                } else {
+                    theme::TERTIARY
                 }
-            });
+            ),
+            text(
+                self.gset_status
+                    .clone()
+                    .unwrap_or_else(|| String::from("GSET ready"))
+            )
+            .size(11)
+            .color(theme::TEXT_SECONDARY)
+            .font(theme::font_code()),
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
 
-        let mut project_buttons = column![].spacing(4);
-        for project in &self.gset_projects {
-            let is_selected = self.gset_selected_project == Some(project.id);
-            project_buttons = project_buttons.push(
+        let toolbar = container(
+            column![
+                row![project_input].spacing(8),
                 row![
-                    button(
-                        text(&project.name)
-                            .size(14)
-                            .color(Color::from_rgb8(218, 226, 253))
-                    )
-                    .padding([8, 12])
-                    .on_press(Message::SelectGsetProject(project.id))
-                    .style(move |_theme, status| iced::widget::button::Style {
-                        background: Some(
-                            if is_selected
-                                || matches!(status, iced::widget::button::Status::Hovered)
-                            {
-                                Color::from_rgb8(51, 65, 85)
-                            } else {
-                                Color::from_rgb8(23, 31, 51)
-                            }
-                            .into(),
-                        ),
-                        text_color: Color::from_rgb8(218, 226, 253),
-                        border: iced::Border {
-                            radius: 8.0.into(),
-                            width: 1.0,
-                            color: Color::from_rgb8(66, 71, 84),
-                        },
-                        shadow: theme::shadow(),
-                        snap: false,
-                    }),
-                    text(&project.root_path)
-                        .size(12)
-                        .color(Color::from_rgb8(140, 144, 159)),
+                    source_input,
+                    target_input,
+                    output_input,
+                    verbose_button,
+                    experimental_button,
+                    run_button,
                 ]
                 .spacing(8)
-                .align_y(Alignment::Center),
-            );
-        }
-
-        let saved_projects: Element<'_, Message> = if self.gset_projects.is_empty() {
-            text("No saved projects yet. Run a transpilation to create one.")
-                .size(14)
-                .color(TEXT_MUTED)
-                .into()
-        } else {
-            column![
-                text("Saved projects").size(14).color(TEXT_SECONDARY),
-                project_buttons,
-            ]
-            .spacing(4)
-            .into()
-        };
-
-        let mut content = column![
-            text("Transpiler IDE").size(28).color(TEXT_PRIMARY),
-            saved_projects,
-            row![path_input, target_input, run_button]
-                .spacing(10)
-                .align_y(Alignment::Center),
-        ]
-        .spacing(16);
-
-        if let Some(status) = &self.gset_status {
-            content = content.push(text(status).size(14).color(TEXT_SECONDARY));
-        }
-
-        if let Some(result) = &self.gset_result {
-            let diagnostics: Element<'_, Message> = if result.diagnostics.is_empty() {
-                text("No diagnostics reported.")
-                    .size(14)
-                    .color(TEXT_MUTED)
-                    .into()
-            } else {
-                let lines: Vec<Element<'_, Message>> = result
-                    .diagnostics
-                    .iter()
-                    .map(|item| text(&item.raw).size(12).color(TEXT_SECONDARY).into())
-                    .collect();
-                column(lines).spacing(4).into()
-            };
-
-            content = content.push(
-                container(
-                    column![
-                        text(if result.success {
-                            "Transpilation successful"
-                        } else {
-                            "Transpilation failed"
-                        })
-                        .size(16)
-                        .color(if result.success {
-                            Color::from_rgb8(16, 185, 129)
-                        } else {
-                            Color::from_rgb8(244, 63, 94)
-                        }),
-                        text("Diagnostics").size(14).color(TEXT_SECONDARY),
-                        diagnostics,
-                        text("Output").size(14).color(TEXT_SECONDARY),
-                        scrollable(text(&result.stdout).size(12).color(TEXT_PRIMARY)),
-                    ]
-                    .spacing(8),
-                )
-                .padding(16)
-                .width(Length::Fill)
-                .style(|_theme| iced::widget::container::Style {
-                    background: Some(Color::from_rgb8(23, 31, 51).into()),
-                    border: iced::Border {
-                        radius: 12.0.into(),
-                        width: 1.0,
-                        color: Color::from_rgb8(66, 71, 84),
-                    },
-                    shadow: theme::shadow(),
-                    text_color: Some(TEXT_PRIMARY),
-                    snap: false,
-                }),
-            );
-        }
-
-        let editor_path = text_input("File to edit", &self.gset_editor_path)
-            .on_input(Message::GsetEditorPathChanged)
-            .padding([10, 14])
-            .width(Length::Fill);
-
-        let editor = text_editor(&self.gset_editor_content)
-            .on_action(Message::GsetEditorAction)
-            .height(Length::Fixed(320.0))
-            .width(1200.0);
-
-        let editor_panel = container(
-            column![
-                text("Raw File Editor").size(18).color(TEXT_PRIMARY),
-                row![editor_path]
-                    .spacing(10)
-                    .push(button("Load").on_press(Message::LoadGsetEditorFile))
-                    .push(button("Save").on_press(Message::SaveGsetEditorFile)),
-                editor,
-                if let Some(status) = &self.gset_editor_status {
-                    text(status).size(14).color(TEXT_SECONDARY)
-                } else {
-                    text("").size(1)
-                },
+                .align_y(iced::Alignment::Center),
+                row![status_line, Space::new().width(Length::Fill)]
+                    .align_y(iced::Alignment::Center),
             ]
             .spacing(8),
         )
-        .padding(16)
-        .width(Length::Fill)
-        .style(|_theme: &Theme| iced::widget::container::Style {
-            background: Some(Color::from_rgb8(23, 31, 51).into()),
-            border: iced::Border {
-                radius: 12.0.into(),
-                width: 1.0,
-                color: Color::from_rgb8(66, 71, 84),
-            },
-            shadow: theme::shadow(),
-            text_color: Some(TEXT_PRIMARY),
-            snap: false,
-        });
+        .padding([10, 12])
+        .style(theme::panel_flat(
+            theme::BG_CONTAINER_LOW,
+            theme::BORDER_SUBTLE,
+            8.0,
+        ));
 
-        content = content.push(editor_panel);
+        // Saved projects row
+        let mut projects_row = row![
+            text("Projects:")
+                .size(11)
+                .color(theme::TEXT_MUTED)
+                .font(theme::font_code())
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center);
+        for project in &self.gset_projects {
+            let selected = self.gset_selected_project == Some(project.id);
+            projects_row =
+                projects_row.push(
+                    button(text(&project.name).size(11).font(theme::font_code()).color(
+                        if selected {
+                            theme::ON_PRIMARY_CONTAINER
+                        } else {
+                            theme::TEXT_SECONDARY
+                        },
+                    ))
+                    .padding([4, 10])
+                    .style(theme::button_style(selected))
+                    .on_press(Message::SelectGsetProject(project.id)),
+                );
+        }
+        if self.gset_projects.is_empty() {
+            projects_row = projects_row.push(text("none yet").size(11).color(theme::TEXT_MUTED));
+        }
+        let projects_bar = container(projects_row)
+            .padding([6, 12])
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER_LOWEST,
+                theme::BORDER_SUBTLE,
+                8.0,
+            ));
 
-        scrollable(container(content).padding(24).width(Length::Fill))
+        // Source editor with header
+        let source_pane = container(
+            column![
+                container(
+                    row![
+                        text("SOURCE EDITOR")
+                            .size(11)
+                            .color(theme::TEXT_MUTED)
+                            .font(theme::font_code()),
+                        Space::new().width(Length::Fill),
+                        text(format!(
+                            "{} chars",
+                            self.gset_editor_content.text().chars().count()
+                        ))
+                        .size(10)
+                        .color(theme::TEXT_MUTED)
+                        .font(theme::font_code()),
+                    ]
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding([6, 12])
+                .style(theme::panel_flat(
+                    theme::BG_CONTAINER_LOW,
+                    theme::BORDER_SUBTLE,
+                    0.0
+                )),
+                text_editor(&self.gset_editor_content)
+                    .on_action(Message::GsetEditorAction)
+                    .height(Length::Fill)
+                    .style(theme::text_editor_style()),
+                container(
+                    row![
+                        text_input("File path", &self.gset_editor_path)
+                            .on_input(Message::GsetEditorPathChanged)
+                            .padding([6, 10])
+                            .width(Length::Fill)
+                            .style(theme::themed_input()),
+                        button(text("Load").size(11).font(theme::font_code()))
+                            .padding([6, 10])
+                            .style(theme::secondary_button())
+                            .on_press(Message::LoadGsetEditorFile),
+                        button(text("Save").size(11).font(theme::font_code()))
+                            .padding([6, 10])
+                            .style(theme::primary_button())
+                            .on_press(Message::SaveGsetEditorFile),
+                    ]
+                    .spacing(6)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding([6, 12])
+                .style(theme::panel_flat(
+                    theme::BG_CONTAINER_LOW,
+                    theme::BORDER_SUBTLE,
+                    0.0
+                )),
+                {
+                    let status_element: Element<'_, Message> =
+                        if let Some(status) = &self.gset_editor_status {
+                            container(
+                                text(status)
+                                    .size(11)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code()),
+                            )
+                            .padding([4, 12])
+                            .into()
+                        } else {
+                            container(Space::new().height(0)).into()
+                        };
+                    status_element
+                },
+            ]
+            .spacing(0),
+        )
+        .width(Length::FillPortion(1))
+        .height(Length::Fill)
+        .style(theme::panel_flat(
+            theme::BG_CONTAINER,
+            theme::BORDER_SUBTLE,
+            8.0,
+        ));
+
+        // Output pane
+        let mut output_col = column![
+            container(
+                row![
+                    text("TRANSPILER OUTPUT")
+                        .size(11)
+                        .color(theme::TEXT_MUTED)
+                        .font(theme::font_code()),
+                    Space::new().width(Length::Fill),
+                ]
+                .align_y(iced::Alignment::Center),
+            )
+            .padding([6, 12])
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER_LOW,
+                theme::BORDER_SUBTLE,
+                0.0
+            )),
+        ]
+        .spacing(0);
+
+        if let Some(result) = &self.gset_result {
+            output_col = output_col.push(
+                container(
+                    text(if result.stdout.is_empty() {
+                        "<no output>"
+                    } else {
+                        &result.stdout
+                    })
+                    .size(12)
+                    .color(theme::TEXT_PRIMARY)
+                    .font(theme::font_code()),
+                )
+                .padding(12)
+                .width(Length::Fill)
+                .height(Length::FillPortion(2)),
+            );
+            // diagnostics drawer
+            let diag_header = container(
+                row![
+                    text(format!("DIAGNOSTICS ({})", result.diagnostics.len()))
+                        .size(11)
+                        .color(if result.success {
+                            theme::TERTIARY
+                        } else {
+                            theme::ERROR
+                        })
+                        .font(theme::font_code()),
+                    Space::new().width(Length::Fill),
+                    text(format!(
+                        "exit {}",
+                        result
+                            .exit_code
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "?".into())
+                    ))
+                    .size(10)
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_code()),
+                ]
+                .align_y(iced::Alignment::Center),
+            )
+            .padding([6, 12])
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER_LOW,
+                theme::BORDER_SUBTLE,
+                0.0,
+            ));
+            output_col = output_col.push(diag_header);
+            let mut diag_list = column![].spacing(4).padding(8);
+            if result.diagnostics.is_empty() {
+                diag_list =
+                    diag_list.push(text("No diagnostics").size(11).color(theme::TEXT_MUTED));
+            } else {
+                for diagnostic in &result.diagnostics {
+                    diag_list = diag_list.push(
+                        container(
+                            text(&diagnostic.message)
+                                .size(11)
+                                .color(theme::ERROR)
+                                .font(theme::font_code()),
+                        )
+                        .padding([4, 8])
+                        .style(theme::panel_flat(
+                            theme::ERROR_CONTAINER,
+                            theme::ERROR,
+                            6.0,
+                        )),
+                    );
+                }
+            }
+            output_col = output_col.push(scrollable(diag_list).height(Length::FillPortion(1)));
+        } else {
+            output_col = output_col.push(
+                container(
+                    text("Run the transpiler to see generated output and diagnostics.")
+                        .size(12)
+                        .color(theme::TEXT_MUTED),
+                )
+                .padding(12)
+                .width(Length::Fill)
+                .height(Length::Fill),
+            );
+        }
+
+        let output_pane = container(output_col)
+            .width(Length::FillPortion(1))
             .height(Length::Fill)
-            .into()
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER,
+                theme::BORDER_SUBTLE,
+                8.0,
+            ));
+
+        let panes = row![source_pane, output_pane]
+            .spacing(10)
+            .height(Length::Fill);
+
+        container(
+            column![toolbar, projects_bar, panes]
+                .spacing(10)
+                .height(Length::Fill),
+        )
+        .padding(12)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 }
