@@ -70,4 +70,11 @@ pub struct StorageStats {
     pub integrity: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct DueCardPreview {
+    pub card: lexic_core::model::Card,
+    pub word: String,
+    pub deck_name: String,
+}
+
 pub const VERSION: &str = "1.0.0";

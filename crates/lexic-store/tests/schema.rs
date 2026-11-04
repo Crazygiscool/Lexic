@@ -1,5 +1,5 @@
 use chrono::Utc;
-use lexic_core::model::{Entry, Sense};
+use lexic_core::model::{CardState, Entry, Sense};
 use lexic_store::Store;
 use uuid::Uuid;
 
@@ -36,6 +36,64 @@ fn opens_in_memory_and_round_trips_entry() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].id, entry_id);
     assert_eq!(store.get_senses(entry_id).unwrap().len(), 1);
+}
+
+#[test]
+fn random_entries_respects_limit() {
+    let store = Store::in_memory().unwrap();
+    let now = Utc::now();
+    for word in ["alpha", "beta", "gamma"] {
+        let id = Uuid::new_v4();
+        let entry = Entry {
+            id,
+            word: word.to_string(),
+            normalized_word: word.to_string(),
+            phonetic: None,
+            audio_url: None,
+            origin: None,
+            source: "manual".to_string(),
+            source_url: None,
+            license: None,
+            created_at: now,
+            updated_at: now,
+        };
+        store.upsert_entry(&entry, &[]).unwrap();
+    }
+    let sampled = store.random_entries(2).unwrap();
+    assert_eq!(sampled.len(), 2);
+    let mut seen = std::collections::HashSet::new();
+    for entry in &sampled {
+        assert!(seen.insert(entry.id));
+    }
+}
+
+#[test]
+fn due_cards_preview_joins_entry_and_deck() {
+    let store = Store::in_memory().unwrap();
+    let deck_id = store.create_deck("My Words", None).unwrap();
+    let entry_id = Uuid::new_v4();
+    let now = Utc::now();
+    let entry = Entry {
+        id: entry_id,
+        word: "lexicon".to_string(),
+        normalized_word: "lexicon".to_string(),
+        phonetic: None,
+        audio_url: None,
+        origin: None,
+        source: "manual".to_string(),
+        source_url: None,
+        license: None,
+        created_at: now,
+        updated_at: now,
+    };
+    store.upsert_entry(&entry, &[]).unwrap();
+    let card_id = store.add_card(entry_id, deck_id).unwrap();
+    let previews = store.due_cards_preview(now, 5).unwrap();
+    assert_eq!(previews.len(), 1);
+    assert_eq!(previews[0].card.id, card_id);
+    assert_eq!(previews[0].word, "lexicon");
+    assert_eq!(previews[0].deck_name, "My Words");
+    assert_eq!(previews[0].card.state, CardState::New);
 }
 
 #[test]

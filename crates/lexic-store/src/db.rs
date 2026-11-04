@@ -618,6 +618,45 @@ impl Store {
         Ok(entries)
     }
 
+    pub fn random_entries(&self, limit: usize) -> Result<Vec<Entry>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT id, word, normalized_word, phonetic, audio_url, origin, source, source_url, license, created_at, updated_at FROM entries ORDER BY RANDOM() LIMIT ?1",
+        )?;
+        let mut rows = statement.query([limit as i64])?;
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next()? {
+            entries.push(map_entry_row(row)?);
+        }
+        Ok(entries)
+    }
+
+    pub fn due_cards_preview(
+        &self,
+        now: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<crate::DueCardPreview>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT c.id, c.entry_id, c.deck_id, c.direction, c.front_note, c.back_note, c.state, c.due_at, c.interval_days, c.ease_factor, c.repetitions, c.lapses, c.first_reviewed_at, c.last_reviewed_at, c.created_at, c.updated_at, e.word, d.name FROM cards c JOIN entries e ON e.id = c.entry_id JOIN decks d ON d.id = c.deck_id WHERE c.state IN ('new','learning','relearning','review') AND (c.state = 'new' OR c.due_at IS NULL OR c.due_at <= ?1) ORDER BY CASE WHEN c.state = 'new' THEN 1 ELSE 0 END, c.due_at IS NULL, c.due_at LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![now.timestamp(), limit as i64], |row| {
+            let card = map_card_row(row)?;
+            let word: String = row.get(16)?;
+            let deck_name: String = row.get(17)?;
+            Ok(crate::DueCardPreview {
+                card,
+                word,
+                deck_name,
+            })
+        })?;
+        let mut values = Vec::new();
+        for row in rows {
+            values.push(row?);
+        }
+        Ok(values)
+    }
+
     pub fn all_cards(&self) -> Result<Vec<Card>, StoreError> {
         let conn = self.lock()?;
         let mut statement = conn.prepare(
