@@ -8,27 +8,6 @@ use iced_fonts::lucide::*;
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
         let due_count: i64 = self.deck_counts.values().map(|(_, _, due)| *due).sum();
-        let transpiler_status = match (self.gset_status.as_deref(), self.gset_result.as_ref()) {
-            (Some(status), _) if status.contains("Running") => "Transpiler: Running",
-            (_, Some(result)) if result.success => "Transpiler: Idle (AST Clean)",
-            (_, Some(_)) => "Transpiler: Failed",
-            _ => "Transpiler: Idle",
-        };
-        let transpiler_dot_color = match transpiler_status {
-            "Transpiler: Failed" => theme::ERROR,
-            "Transpiler: Running" => theme::WARNING,
-            _ => theme::TERTIARY,
-        };
-
-        let active_file = if !self.gset_editor_path.is_empty() {
-            std::path::Path::new(&self.gset_editor_path)
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("source.ts")
-                .to_string()
-        } else {
-            String::from("source.ts")
-        };
 
         let db_size = self
             .database_path
@@ -74,7 +53,7 @@ impl App {
                     .size(13)
                     .color(theme::TEXT_PRIMARY)
                     .font(theme::font_code()),
-                text("GSET Studio")
+                text("Grammar Studio")
                     .size(10)
                     .color(theme::PRIMARY)
                     .font(theme::font_code()),
@@ -83,18 +62,20 @@ impl App {
             Space::new().width(Length::Fill),
             container(
                 row![
-                    container(row![
-                        components::status_dot(theme::TERTIARY),
-                        text(version_chip).size(10).color(theme::TERTIARY)
-                    ])
-                    .padding([1, 6]),
+                    components::status_dot(theme::TERTIARY),
+                    text(version_chip)
+                        .size(10)
+                        .color(theme::TERTIARY)
+                        .font(theme::font_code()),
                 ]
-                .spacing(0),
+                .spacing(4)
+                .align_y(Alignment::Center),
             )
+            .padding([2, 8])
             .style(theme::panel_flat(
                 theme::BG_CONTAINER_HIGH,
                 theme::BORDER_SUBTLE,
-                6.0
+                999.0
             )),
         ]
         .spacing(10)
@@ -102,18 +83,30 @@ impl App {
 
         let spec_pill = container(
             row![
-                code().size(13).color(theme::TERTIARY),
+                book_open().size(13).color(theme::TERTIARY),
                 text("Grammar Spec")
                     .size(11)
                     .color(theme::TEXT_SECONDARY)
                     .font(theme::font_code()),
                 Space::new().width(Length::Fill),
-                chip_text(self.gset_bridge.version.clone()),
+                container(
+                    text("lexical")
+                        .size(10)
+                        .color(theme::TERTIARY)
+                        .font(theme::font_code())
+                )
+                .padding([1, 6])
+                .style(theme::panel_flat(
+                    theme::BG_CONTAINER_HIGH,
+                    theme::BORDER_SUBTLE,
+                    6.0
+                )),
             ]
             .spacing(6)
             .align_y(Alignment::Center),
         )
         .padding([6, 10])
+        .width(Length::Fill)
         .style(theme::panel_flat(
             theme::BG_CONTAINER,
             theme::BORDER_SUBTLE,
@@ -131,26 +124,18 @@ impl App {
             ),
             nav_link(
                 self,
-                Screen::Project,
-                code(),
-                "Transpiler IDE",
-                "\u{2325}2",
-                None
-            ),
-            nav_link(
-                self,
                 Screen::Review,
                 library(),
                 "Review Deck",
                 "Due",
-                Some(due_count),
+                Some(due_count)
             ),
             nav_link(
                 self,
                 Screen::Search,
                 book_open(),
                 "Grammar Dict",
-                "\u{2325}4",
+                "\u{2325}3",
                 None
             ),
             nav_link(
@@ -158,43 +143,16 @@ impl App {
                 Screen::Settings,
                 settings(),
                 "Engine & Interop",
-                "\u{2325}5",
+                "\u{2325}4",
                 None
             ),
         ]
         .spacing(4);
 
         let queue_text = format!("{due_count} SRS pending");
-        let bridge_label = if self.gset_bridge.available {
-            self.gset_bridge
-                .version
-                .clone()
-                .unwrap_or_else(|| String::from("available"))
-        } else {
-            String::from("unavailable")
-        };
 
         let footer = column![
-            column![
-                text("Engine Daemons")
-                    .size(10)
-                    .color(theme::TEXT_MUTED)
-                    .font(theme::font_code()),
-                row![
-                    text("2 OK")
-                        .size(10)
-                        .color(theme::TERTIARY)
-                        .font(theme::font_code()),
-                ],
-            ]
-            .spacing(2),
-            panel_line("rusqlite", &sqlite_version, "WAL mode", &db_path),
-            panel_line(
-                "IPC Daemon",
-                &bridge_label,
-                "GSET bridge",
-                &self.gset_bridge.path.display().to_string()
-            ),
+            panel_line("rusqlite", &sqlite_version, "WAL", &db_path),
             container(
                 row![
                     text("Queue Load")
@@ -203,7 +161,7 @@ impl App {
                         .font(theme::font_code()),
                     Space::new().width(Length::Fill),
                     text(queue_text)
-                        .size(11)
+                        .size(10)
                         .color(theme::PRIMARY)
                         .font(theme::font_code()),
                 ]
@@ -247,8 +205,8 @@ impl App {
             row![
                 container(
                     row![
-                        file_text().size(13).color(theme::PRIMARY),
-                        text(active_file)
+                        book_open().size(13).color(theme::PRIMARY),
+                        text("Lexic")
                             .size(12)
                             .color(theme::TEXT_PRIMARY)
                             .font(theme::font_code()),
@@ -258,44 +216,7 @@ impl App {
                 )
                 .padding([4, 10])
                 .style(theme::panel_flat(theme::BG_CONTAINER, theme::PRIMARY, 6.0)),
-                container(
-                    row![
-                        git_branch().size(12).color(theme::SECONDARY),
-                        text(self.gset_target_language.to_uppercase())
-                            .size(11)
-                            .color(theme::TEXT_SECONDARY)
-                            .font(theme::font_code()),
-                    ]
-                    .spacing(4)
-                    .align_y(Alignment::Center),
-                )
-                .padding([4, 8])
-                .style(theme::panel_flat(
-                    theme::BG_CONTAINER_HIGH,
-                    theme::BORDER_SUBTLE,
-                    6.0
-                )),
                 Space::new().width(8),
-                row![
-                    container(Space::new())
-                        .width(1)
-                        .height(16)
-                        .style(theme::panel_flat(
-                            theme::BG_CONTAINER_HIGHEST,
-                            theme::BG_CONTAINER_HIGHEST,
-                            0.0
-                        )),
-                ],
-                Space::new().width(8),
-                row![
-                    components::status_dot(transpiler_dot_color),
-                    text(transpiler_status.trim_start_matches("Transpiler: "))
-                        .size(11)
-                        .color(theme::TEXT_SECONDARY)
-                        .font(theme::font_code()),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center),
                 Space::new().width(Length::Fill),
                 button(
                     row![
@@ -364,7 +285,6 @@ impl App {
         // Content
         let content: Element<'_, Message> = match self.screen {
             Screen::Home => self.home_view(),
-            Screen::Project => self.project_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),
@@ -498,23 +418,6 @@ fn panel_line(
     .padding([6, 8])
     .style(theme::panel_flat(
         theme::BG_CONTAINER_LOW,
-        theme::BORDER_SUBTLE,
-        6.0,
-    ))
-    .into()
-}
-
-fn chip_text(value: Option<String>) -> Element<'static, Message> {
-    let value = value.unwrap_or_else(|| String::from("GSET"));
-    container(
-        text(value)
-            .size(10)
-            .color(theme::TERTIARY)
-            .font(theme::font_code()),
-    )
-    .padding([1, 6])
-    .style(theme::panel_flat(
-        theme::BG_CONTAINER_HIGH,
         theme::BORDER_SUBTLE,
         6.0,
     ))

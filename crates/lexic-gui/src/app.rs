@@ -85,7 +85,6 @@ pub enum Screen {
     Review,
     Stats,
     Settings,
-    Project,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -137,23 +136,6 @@ pub struct App {
     pub(crate) stats_range: u32,
     pub(crate) stats_data: Option<StatsSnapshot>,
 
-    pub(crate) gset_project_path: String,
-    pub(crate) gset_target_language: String,
-    pub(crate) gset_source_language: String,
-    pub(crate) gset_output_path: String,
-    pub(crate) gset_verbose: bool,
-    pub(crate) gset_experimental_api_map: bool,
-    pub(crate) gset_status: Option<String>,
-    pub(crate) gset_result: Option<crate::gset::GsetRunResult>,
-
-    pub(crate) gset_projects: Vec<lexic_store::Project>,
-    pub(crate) gset_selected_project: Option<lexic_core::model::Id>,
-
-    pub(crate) gset_editor_path: String,
-    pub(crate) gset_editor_content: iced::widget::text_editor::Content,
-    pub(crate) gset_editor_status: Option<String>,
-
-    pub(crate) gset_bridge: crate::gset::GsetBridgeStatus,
     pub(crate) database_path: Option<std::path::PathBuf>,
     pub(crate) storage_stats: Option<lexic_store::StorageStats>,
 
@@ -219,23 +201,6 @@ pub enum Message {
     OpenWord(lexic_core::model::Id),
     WordOpened(Option<Entry>, Vec<Sense>),
     ToggleSidebar,
-    GsetProjectPathChanged(String),
-    GsetTargetLanguageChanged(String),
-    GsetSourceLanguageChanged(String),
-    GsetOutputPathChanged(String),
-    GsetVerboseToggled,
-    GsetExperimentalToggled,
-    RunGsetTranspile,
-    GsetTranspileFinished(Result<crate::gset::GsetRunResult, String>),
-    LoadGsetProjects,
-    GsetProjectsLoaded(Result<Vec<lexic_store::Project>, String>),
-    SelectGsetProject(lexic_core::model::Id),
-    GsetEditorPathChanged(String),
-    LoadGsetEditorFile,
-    GsetEditorFileLoaded(Result<String, String>),
-    GsetEditorAction(iced::widget::text_editor::Action),
-    SaveGsetEditorFile,
-    SaveGsetEditorFinished(Result<(), String>),
     Event(iced::Event),
     SearchInputChanged(String),
     DictionaryPosFilterChanged(Option<String>),
@@ -351,23 +316,6 @@ impl App {
             stats_range: 30,
             stats_data: None,
 
-            gset_project_path: String::new(),
-            gset_target_language: String::from("go"),
-            gset_source_language: String::new(),
-            gset_output_path: String::new(),
-            gset_verbose: true,
-            gset_experimental_api_map: false,
-            gset_status: None,
-            gset_result: None,
-
-            gset_projects: Vec::new(),
-            gset_selected_project: None,
-
-            gset_editor_path: String::new(),
-            gset_editor_content: iced::widget::text_editor::Content::new(),
-            gset_editor_status: None,
-
-            gset_bridge: crate::gset::resolve_bridge(),
             database_path: database_path.clone(),
             storage_stats: None,
 
@@ -554,9 +502,6 @@ impl App {
                 if screen == Screen::Home {
                     return self.update(Message::RefreshHome);
                 }
-                if screen == Screen::Project {
-                    return self.update(Message::LoadGsetProjects);
-                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -565,255 +510,6 @@ impl App {
             }
             Message::StorageStatsLoaded(stats) => {
                 self.storage_stats = Some(stats);
-                Task::none()
-            }
-            Message::GsetProjectPathChanged(value) => {
-                self.gset_project_path = value;
-                Task::none()
-            }
-            Message::GsetTargetLanguageChanged(value) => {
-                self.gset_target_language = value;
-                Task::none()
-            }
-            Message::GsetSourceLanguageChanged(value) => {
-                self.gset_source_language = value;
-                Task::none()
-            }
-            Message::GsetOutputPathChanged(value) => {
-                self.gset_output_path = value;
-                Task::none()
-            }
-            Message::GsetVerboseToggled => {
-                self.gset_verbose = !self.gset_verbose;
-                Task::none()
-            }
-            Message::GsetExperimentalToggled => {
-                self.gset_experimental_api_map = !self.gset_experimental_api_map;
-                Task::none()
-            }
-            Message::RunGsetTranspile => {
-                let path = self.gset_project_path.trim().to_string();
-                if path.is_empty() {
-                    self.gset_status = Some(String::from("Enter a project path"));
-                    return Task::none();
-                }
-                let target = self.gset_target_language.trim().to_string();
-                let source = self.gset_source_language.trim().to_string();
-                let output = self.gset_output_path.trim().to_string();
-                let verbose = self.gset_verbose;
-                let experimental = self.gset_experimental_api_map;
-                self.gset_status = Some(String::from("Running GSET transpilation..."));
-                let store = self.store.clone();
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            let target = if target.is_empty() {
-                                String::from("go")
-                            } else {
-                                target
-                            };
-                            let project_id = if let Some(store) = store.as_ref() {
-                                Some(
-                                    store
-                                        .ensure_project(&path, &target)
-                                        .map_err(|e| e.to_string())?,
-                                )
-                            } else {
-                                None
-                            };
-                            let run_id = if let (Some(store), Some(project_id)) =
-                                (store.as_ref(), project_id)
-                            {
-                                Some(
-                                    store
-                                        .start_transpile_run(project_id, &target)
-                                        .map_err(|e| e.to_string())?,
-                                )
-                            } else {
-                                None
-                            };
-
-                            let source_arg = if source.is_empty() {
-                                None
-                            } else {
-                                Some(source.as_str())
-                            };
-                            let output_arg = if output.is_empty() {
-                                None
-                            } else {
-                                Some(std::path::Path::new(&output))
-                            };
-                            let result = crate::gset::transpile(
-                                std::path::Path::new(&path),
-                                &target,
-                                source_arg,
-                                output_arg,
-                                verbose,
-                                experimental,
-                            )?;
-
-                            if let (Some(store), Some(run_id)) = (store.as_ref(), run_id) {
-                                let status = if result.success { "success" } else { "failed" };
-                                let summary = if result.success {
-                                    Some(format!(
-                                        "GSET transpilation completed with {} diagnostics",
-                                        result.diagnostics.len()
-                                    ))
-                                } else {
-                                    Some(String::from("GSET transpilation failed"))
-                                };
-                                store
-                                    .finish_transpile_run(
-                                        run_id,
-                                        status,
-                                        result.exit_code,
-                                        result.diagnostics.len() as i32,
-                                        summary.as_deref(),
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                            }
-
-                            Ok(result)
-                        })
-                        .await
-                        .map_err(|error| error.to_string())?
-                    },
-                    Message::GsetTranspileFinished,
-                )
-            }
-            Message::GsetTranspileFinished(result) => {
-                match result {
-                    Ok(result) => {
-                        self.gset_status = Some(if result.success {
-                            String::from("GSET transpilation completed")
-                        } else {
-                            String::from("GSET transpilation failed")
-                        });
-                        self.gset_result = Some(result);
-                        if self.store.is_some() {
-                            return self.update(Message::LoadGsetProjects);
-                        }
-                    }
-                    Err(error) => {
-                        self.gset_status = Some(error);
-                    }
-                }
-                Task::none()
-            }
-            Message::GsetEditorPathChanged(value) => {
-                self.gset_editor_path = value;
-                Task::none()
-            }
-            Message::LoadGsetEditorFile => {
-                let path = self.gset_editor_path.trim().to_string();
-                if path.is_empty() {
-                    self.gset_editor_status = Some(String::from("Enter a file path"));
-                    return Task::none();
-                }
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            std::fs::read_to_string(&path).map_err(|error| error.to_string())
-                        })
-                        .await
-                        .map_err(|error| error.to_string())?
-                    },
-                    Message::GsetEditorFileLoaded,
-                )
-            }
-            Message::GsetEditorFileLoaded(result) => {
-                match result {
-                    Ok(content) => {
-                        self.gset_editor_content =
-                            iced::widget::text_editor::Content::with_text(&content);
-                        self.gset_editor_status = Some(String::from("File loaded"));
-                    }
-                    Err(error) => self.gset_editor_status = Some(error),
-                }
-                Task::none()
-            }
-            Message::GsetEditorAction(action) => {
-                self.gset_editor_content.perform(action);
-                Task::none()
-            }
-            Message::LoadGsetProjects => {
-                let Some(store) = self.store.clone() else {
-                    return Task::<Message>::none();
-                };
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            store.list_projects().map_err(|error| error.to_string())
-                        })
-                        .await
-                        .map_err(|error| error.to_string())?
-                    },
-                    Message::GsetProjectsLoaded,
-                )
-            }
-            Message::GsetProjectsLoaded(result) => {
-                match result {
-                    Ok(projects) => {
-                        if self.gset_selected_project.is_none() {
-                            self.gset_selected_project = projects.first().map(|project| project.id);
-                        }
-                        self.gset_projects = projects;
-                    }
-                    Err(error) => self.gset_status = Some(error),
-                }
-                Task::none()
-            }
-            Message::SelectGsetProject(project_id) => {
-                self.gset_selected_project = Some(project_id);
-                if let Some(project) = self
-                    .gset_projects
-                    .iter()
-                    .find(|project| project.id == project_id)
-                {
-                    self.gset_project_path = project.root_path.clone();
-                    self.gset_target_language = project.target_language.clone();
-                }
-                Task::none()
-            }
-            Message::SaveGsetEditorFile => {
-                let path = self.gset_editor_path.trim().to_string();
-                if path.is_empty() {
-                    self.gset_editor_status = Some(String::from("Enter a file path"));
-                    return Task::none();
-                }
-                let content = self.gset_editor_content.text();
-                let store = self.store.clone();
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            std::fs::write(&path, &content).map_err(|error| error.to_string())?;
-                            if let Some(store) = store {
-                                let root = std::path::Path::new(&path)
-                                    .parent()
-                                    .and_then(|value| value.to_str())
-                                    .filter(|value| !value.trim().is_empty())
-                                    .unwrap_or(".")
-                                    .to_string();
-                                let project_id = store
-                                    .ensure_project(&root, "go")
-                                    .map_err(|error| error.to_string())?;
-                                store
-                                    .add_manual_edit(project_id, &path, &content)
-                                    .map_err(|error| error.to_string())?;
-                            }
-                            Ok(())
-                        })
-                        .await
-                        .map_err(|error| error.to_string())?
-                    },
-                    Message::SaveGsetEditorFinished,
-                )
-            }
-            Message::SaveGsetEditorFinished(result) => {
-                match result {
-                    Ok(()) => self.gset_editor_status = Some(String::from("File saved")),
-                    Err(error) => self.gset_editor_status = Some(error),
-                }
                 Task::none()
             }
             Message::Event(event) => {
@@ -825,10 +521,9 @@ impl App {
                         match key {
                             keyboard::Key::Character(ref value) => match value.as_ref() {
                                 "1" => return self.update(Message::Navigate(Screen::Home)),
-                                "2" => return self.update(Message::Navigate(Screen::Project)),
-                                "3" => return self.update(Message::Navigate(Screen::Review)),
-                                "4" => return self.update(Message::Navigate(Screen::Search)),
-                                "5" => return self.update(Message::Navigate(Screen::Settings)),
+                                "2" => return self.update(Message::Navigate(Screen::Review)),
+                                "3" => return self.update(Message::Navigate(Screen::Search)),
+                                "4" => return self.update(Message::Navigate(Screen::Settings)),
                                 _ => {}
                             },
                             _ => {}

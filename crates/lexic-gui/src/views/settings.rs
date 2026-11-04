@@ -18,7 +18,6 @@ impl App {
             .as_ref()
             .and_then(|p| std::fs::metadata(p).ok().map(|m| m.len()))
             .unwrap_or(0);
-        let gset = &self.gset_bridge;
 
         let header = container(
             row![
@@ -268,84 +267,7 @@ impl App {
             10.0,
         ));
 
-        // GSET bridge card
-        let gset_card = container(
-            column![
-                text("GSET bridge")
-                    .size(14)
-                    .color(theme::TEXT_PRIMARY)
-                    .font(theme::font_code()),
-                row![
-                    text("Binary")
-                        .size(11)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code()),
-                    text(gset.path.display().to_string())
-                        .size(11)
-                        .color(theme::TEXT_SECONDARY)
-                        .font(theme::font_code()),
-                ]
-                .spacing(8),
-                row![
-                    text("Version")
-                        .size(11)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code()),
-                    text(
-                        gset.version
-                            .clone()
-                            .unwrap_or_else(|| String::from("unknown"))
-                    )
-                    .size(11)
-                    .color(theme::TEXT_SECONDARY)
-                    .font(theme::font_code()),
-                    text("Status")
-                        .size(11)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code()),
-                    text(if gset.available {
-                        "available"
-                    } else {
-                        "unavailable"
-                    })
-                    .size(11)
-                    .color(if gset.available {
-                        theme::TERTIARY
-                    } else {
-                        theme::ERROR
-                    })
-                    .font(theme::font_code()),
-                ]
-                .spacing(8),
-                if let Some(result) = &self.gset_result {
-                    text(format!(
-                        "Last run: {} (exit {})",
-                        if result.success { "success" } else { "failed" },
-                        result
-                            .exit_code
-                            .map(|v| v.to_string())
-                            .unwrap_or_else(|| "?".into())
-                    ))
-                    .size(11)
-                    .color(theme::TEXT_MUTED)
-                    .font(theme::font_code())
-                } else {
-                    text("Last run: none")
-                        .size(11)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code())
-                },
-            ]
-            .spacing(8),
-        )
-        .padding(14)
-        .style(theme::panel_flat(
-            theme::BG_CONTAINER_LOW,
-            theme::BORDER_SUBTLE,
-            10.0,
-        ));
-
-        let content = column![header, storage_card, backup_card, gset_card].spacing(12);
+        let content = column![header, storage_card, backup_card].spacing(12);
         let scroll = scrollable(content).height(Length::Fill);
         container(scroll)
             .padding(16)
