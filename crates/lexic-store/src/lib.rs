@@ -29,30 +29,6 @@ pub struct ImportSummary {
     pub reviews: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct Project {
-    pub id: lexic_core::model::Id,
-    pub name: String,
-    pub root_path: String,
-    pub source_language: Option<String>,
-    pub target_language: String,
-    pub created_at: lexic_core::model::Timestamp,
-    pub updated_at: lexic_core::model::Timestamp,
-}
-
-#[derive(Debug, Clone)]
-pub struct TranspileRun {
-    pub id: lexic_core::model::Id,
-    pub project_id: lexic_core::model::Id,
-    pub target_language: String,
-    pub status: String,
-    pub started_at: lexic_core::model::Timestamp,
-    pub finished_at: Option<lexic_core::model::Timestamp>,
-    pub exit_code: Option<i32>,
-    pub diagnostic_count: i32,
-    pub summary: Option<String>,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StorageStats {
     pub sqlite_version: String,
