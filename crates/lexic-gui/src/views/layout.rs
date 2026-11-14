@@ -122,6 +122,7 @@ impl App {
                 "\u{2325}1",
                 None
             ),
+            nav_link(self, Screen::Notes, file_text(), "Notes", "\u{2325}5", None),
             nav_link(
                 self,
                 Screen::Review,
@@ -135,7 +136,7 @@ impl App {
                 Screen::Search,
                 book_open(),
                 "Grammar Dict",
-                "\u{2325}3",
+                "\u{2325}6",
                 None
             ),
             nav_link(
@@ -143,7 +144,7 @@ impl App {
                 Screen::Settings,
                 settings(),
                 "Engine & Interop",
-                "\u{2325}4",
+                "\u{2325}7",
                 None
             ),
         ]
@@ -285,6 +286,8 @@ impl App {
         // Content
         let content: Element<'_, Message> = match self.screen {
             Screen::Home => self.home_view(),
+            Screen::Notes => self.notes_view(),
+            Screen::NoteDetail(_) => self.note_detail_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),

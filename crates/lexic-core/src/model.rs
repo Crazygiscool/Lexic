@@ -121,3 +121,56 @@ impl std::fmt::Display for CardState {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Note {
+    pub id: Id,
+    pub title: String,
+    pub content: String,
+    pub subject: String,
+    pub tags: Vec<String>,
+    pub source_url: Option<String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TimelineEvent {
+    pub id: Id,
+    pub title: String,
+    pub description: String,
+    pub start_date: Timestamp,
+    pub end_date: Option<Timestamp>,
+    pub subject: String,
+    pub note_id: Option<Id>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GrammarRule {
+    pub id: Id,
+    pub title: String,
+    pub category: String,
+    pub explanation: String,
+    pub examples: Vec<String>,
+    pub counter_examples: Vec<String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Source {
+    pub id: Id,
+    pub url: String,
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub imported_at: Timestamp,
+    pub browser_history_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NoteLink {
+    pub id: Id,
+    pub source_note_id: Id,
+    pub target_note_id: Id,
+    pub link_type: String,
+}

@@ -3,13 +3,14 @@
 #![allow(clippy::single_match)]
 #![allow(dead_code)]
 
-use lexic_core::model::{Card, Deck, Entry, Sense};
+use lexic_core::model::{Card, Deck, Entry, Id, Note, Sense};
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
 use lexic_dict::{DictionaryClient, LookupResult, normalize};
 use lexic_store::Store;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use uuid::Uuid;
 
 use iced::keyboard;
 use iced::{Color, Element, Task, Theme, widget::button as iced_button};
@@ -85,6 +86,8 @@ pub enum Screen {
     Review,
     Stats,
     Settings,
+    Notes,
+    NoteDetail(lexic_core::model::Id),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -144,6 +147,17 @@ pub struct App {
     pub(crate) home_ticker_offset: f32,
     pub(crate) review: Option<ReviewSession>,
     pub(crate) review_status: Option<String>,
+
+    pub(crate) notes: Vec<Note>,
+    pub(crate) note_subjects: Vec<String>,
+    pub(crate) active_note: Option<Note>,
+    pub(crate) note_editor_title: String,
+    pub(crate) note_editor_content: iced::widget::text_editor::Content,
+    pub(crate) note_editor_subject: String,
+    pub(crate) note_editor_tags: String,
+    pub(crate) note_editor_status: Option<String>,
+    pub(crate) note_selected_id: Option<lexic_core::model::Id>,
+    pub(crate) note_search_input: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -259,6 +273,24 @@ pub enum Message {
     UndoReview,
     UndoFinished(Result<(), String>),
     EndReview,
+
+    LoadNotes,
+    NotesLoaded(Vec<Note>),
+    NoteSubjectsLoaded(Vec<String>),
+    NoteSelected(lexic_core::model::Id),
+    NoteTitleChanged(String),
+    NoteContentChanged(String),
+    NoteSubjectChanged(String),
+    NoteTagsChanged(String),
+    NoteSearchChanged(String),
+    SaveNote,
+    NoteSaved(Result<(), String>),
+    DeleteNote(lexic_core::model::Id),
+    NoteDeleted(Result<(), String>),
+    NewNote,
+    CancelNoteEdit,
+    NoteEditorAction(iced::widget::text_editor::Action),
+    NoteOpened(Option<Note>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -324,6 +356,17 @@ impl App {
             home_ticker_offset: 0.0,
             review: None,
             review_status: None,
+
+            notes: Vec::new(),
+            note_subjects: Vec::new(),
+            active_note: None,
+            note_editor_title: String::new(),
+            note_editor_content: iced::widget::text_editor::Content::new(),
+            note_editor_subject: String::from("General"),
+            note_editor_tags: String::new(),
+            note_editor_status: None,
+            note_selected_id: None,
+            note_search_input: String::new(),
         };
         let task = if let Some(store) = app.store.clone() {
             let store_for_stats = store.clone();
@@ -502,6 +545,9 @@ impl App {
                 if screen == Screen::Home {
                     return self.update(Message::RefreshHome);
                 }
+                if screen == Screen::Notes {
+                    return self.update(Message::LoadNotes);
+                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -524,6 +570,7 @@ impl App {
                                 "2" => return self.update(Message::Navigate(Screen::Review)),
                                 "3" => return self.update(Message::Navigate(Screen::Search)),
                                 "4" => return self.update(Message::Navigate(Screen::Settings)),
+                                "5" => return self.update(Message::Navigate(Screen::Notes)),
                                 _ => {}
                             },
                             _ => {}
@@ -1317,6 +1364,209 @@ impl App {
                 self.review = None;
                 self.review_status = Some(String::from("Review session ended"));
                 self.update(Message::Navigate(Screen::Home))
+            }
+
+            // === Notes ===
+            Message::LoadNotes => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                let store_for_subjects = store.clone();
+                Task::batch([
+                    Task::perform(
+                        async move { store.list_notes(None, None).unwrap_or_default() },
+                        Message::NotesLoaded,
+                    ),
+                    Task::perform(
+                        async move { store_for_subjects.list_subjects().unwrap_or_default() },
+                        Message::NoteSubjectsLoaded,
+                    ),
+                ])
+            }
+            Message::NotesLoaded(notes) => {
+                self.notes = notes;
+                // Apply search filter if active
+                if !self.note_search_input.is_empty() {
+                    let query = self.note_search_input.clone().to_lowercase();
+                    self.notes.retain(|note| {
+                        note.title.to_lowercase().contains(&query)
+                            || note.content.to_lowercase().contains(&query)
+                            || note.subject.to_lowercase().contains(&query)
+                    });
+                }
+                Task::none()
+            }
+            Message::NoteSubjectsLoaded(subjects) => {
+                self.note_subjects = subjects;
+                Task::none()
+            }
+            Message::NoteSelected(note_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                self.note_selected_id = Some(note_id);
+                self.screen = Screen::NoteDetail(note_id);
+                Task::perform(
+                    async move { store.get_note(note_id).unwrap_or_default() },
+                    Message::NoteOpened,
+                )
+            }
+            Message::NoteOpened(note) => {
+                self.active_note = note;
+                if let Some(note) = &self.active_note {
+                    self.note_editor_title = note.title.clone();
+                    self.note_editor_content =
+                        iced::widget::text_editor::Content::with_text(&note.content);
+                    self.note_editor_subject = note.subject.clone();
+                    self.note_editor_tags = note.tags.join(", ");
+                }
+                Task::none()
+            }
+            Message::NewNote => {
+                self.active_note = None;
+                self.note_selected_id = None;
+                self.note_editor_title = String::new();
+                self.note_editor_content = iced::widget::text_editor::Content::new();
+                self.note_editor_subject = String::from("General");
+                self.note_editor_tags = String::new();
+                self.note_editor_status = None;
+                self.screen = Screen::NoteDetail(lexic_core::model::Id::nil());
+                Task::none()
+            }
+            Message::NoteTitleChanged(value) => {
+                self.note_editor_title = value;
+                Task::none()
+            }
+            Message::NoteContentChanged(_value) => {
+                // Content is managed by the text editor via NoteEditorAction
+                Task::none()
+            }
+            Message::NoteSubjectChanged(value) => {
+                self.note_editor_subject = value;
+                Task::none()
+            }
+            Message::NoteTagsChanged(value) => {
+                self.note_editor_tags = value;
+                Task::none()
+            }
+            Message::NoteSearchChanged(value) => {
+                self.note_search_input = value.clone();
+                if let Some(store) = self.store.clone() {
+                    let query = value.clone();
+                    Task::perform(
+                        async move { store.search_notes(&query, 50).unwrap_or_default() },
+                        Message::NotesLoaded,
+                    )
+                } else {
+                    self.notes.clear();
+                    Task::none()
+                }
+            }
+            Message::SaveNote => {
+                let Some(store) = self.store.clone() else {
+                    self.note_editor_status = Some(String::from("Database is not ready"));
+                    return Task::none();
+                };
+                let title = self.note_editor_title.trim().to_string();
+                if title.is_empty() {
+                    self.note_editor_status = Some(String::from("Title cannot be empty"));
+                    return Task::none();
+                }
+                let now = now_utc();
+                let tags: Vec<String> = self
+                    .note_editor_tags
+                    .split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                let note = Note {
+                    id: self
+                        .active_note
+                        .as_ref()
+                        .map(|n| n.id)
+                        .unwrap_or_else(Id::nil),
+                    title,
+                    content: self.note_editor_content.text(),
+                    subject: self.note_editor_subject.clone(),
+                    tags,
+                    source_url: None,
+                    created_at: self
+                        .active_note
+                        .as_ref()
+                        .map(|n| n.created_at)
+                        .unwrap_or(now),
+                    updated_at: now,
+                };
+                Task::perform(
+                    async move {
+                        if note.id == Id::nil() {
+                            let new_id = Uuid::new_v4();
+                            let note_with_id = Note { id: new_id, ..note };
+                            store
+                                .create_note(&note_with_id)
+                                .map_err(|error| error.to_string())?;
+                        } else {
+                            store
+                                .update_note(&note)
+                                .map_err(|error| error.to_string())?;
+                        }
+                        Ok(())
+                    },
+                    Message::NoteSaved,
+                )
+            }
+            Message::NoteSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        self.note_editor_status = Some(String::from("Note saved"));
+                        let _ = self.update(Message::LoadNotes);
+                        self.screen = Screen::Notes;
+                    }
+                    Err(error) => self.note_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::DeleteNote(note_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .delete_note(note_id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    Message::NoteDeleted,
+                )
+            }
+            Message::NoteDeleted(result) => {
+                match result {
+                    Ok(()) => {
+                        self.active_note = None;
+                        self.note_selected_id = None;
+                        self.note_editor_status = Some(String::from("Note deleted"));
+                        let _ = self.update(Message::LoadNotes);
+                        self.screen = Screen::Notes;
+                    }
+                    Err(error) => self.note_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::CancelNoteEdit => {
+                self.active_note = None;
+                self.note_selected_id = None;
+                self.note_editor_title = String::new();
+                self.note_editor_content = iced::widget::text_editor::Content::new();
+                self.note_editor_subject = String::from("General");
+                self.note_editor_tags = String::new();
+                self.note_editor_status = None;
+                self.screen = Screen::Notes;
+                Task::none()
+            }
+            Message::NoteEditorAction(action) => {
+                self.note_editor_content.perform(action);
+                Task::none()
             }
         }
     }

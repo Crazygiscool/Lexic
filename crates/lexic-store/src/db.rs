@@ -14,6 +14,7 @@ const MIGRATIONS: &[(&str, usize)] = &[
         2,
     ),
     (include_str!("../migrations/0004_drop_transpilation.sql"), 4),
+    (include_str!("../migrations/0005_humanities.sql"), 5),
 ];
 
 #[derive(Clone)]
@@ -728,6 +729,370 @@ impl Store {
         )?;
         Ok(())
     }
+    // === Notes ===
+
+    pub fn create_note(&self, note: &Note) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO notes (id, title, content, subject, tags, source_url, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                note.id.to_string(),
+                note.title,
+                note.content,
+                note.subject,
+                serde_json::to_string(&note.tags).unwrap_or_else(|_| "[]".to_string()),
+                note.source_url,
+                note.created_at.timestamp(),
+                note.updated_at.timestamp(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_note(&self, note: &Note) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE notes SET title = ?1, content = ?2, subject = ?3, tags = ?4, source_url = ?5, updated_at = ?6 WHERE id = ?7",
+            params![
+                note.title,
+                note.content,
+                note.subject,
+                serde_json::to_string(&note.tags).unwrap_or_else(|_| "[]".to_string()),
+                note.source_url,
+                note.updated_at.timestamp(),
+                note.id.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_note(&self, id: Id) -> Result<Option<Note>, StoreError> {
+        let conn = self.lock()?;
+        let result = conn.query_row(
+            "SELECT id, title, content, subject, tags, source_url, created_at, updated_at FROM notes WHERE id = ?1",
+            params![id.to_string()],
+            map_note_row,
+        ).optional()?;
+        Ok(result)
+    }
+
+    pub fn list_notes(
+        &self,
+        subject: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Note>, StoreError> {
+        let conn = self.lock()?;
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = match subject {
+            Some(s) if !s.is_empty() => match limit {
+                Some(l) => (
+                    "SELECT id, title, content, subject, tags, source_url, created_at, updated_at FROM notes WHERE subject = ?1 ORDER BY updated_at DESC LIMIT ?2".to_string(),
+                    vec![Box::new(s.to_string()) as Box<dyn rusqlite::ToSql>, Box::new(l as i64) as Box<dyn rusqlite::ToSql>],
+                ),
+                None => (
+                    "SELECT id, title, content, subject, tags, source_url, created_at, updated_at FROM notes WHERE subject = ?1 ORDER BY updated_at DESC".to_string(),
+                    vec![Box::new(s.to_string()) as Box<dyn rusqlite::ToSql>],
+                ),
+            },
+            _ => match limit {
+                Some(l) => (
+                    "SELECT id, title, content, subject, tags, source_url, created_at, updated_at FROM notes ORDER BY updated_at DESC LIMIT ?1".to_string(),
+                    vec![Box::new(l as i64) as Box<dyn rusqlite::ToSql>],
+                ),
+                None => (
+                    "SELECT id, title, content, subject, tags, source_url, created_at, updated_at FROM notes ORDER BY updated_at DESC".to_string(),
+                    vec![],
+                ),
+            },
+        };
+        let mut statement = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = statement.query_map(params_refs.as_slice(), map_note_row)?;
+        let mut notes = Vec::new();
+        for row in rows {
+            notes.push(row?);
+        }
+        Ok(notes)
+    }
+
+    pub fn delete_note(&self, id: Id) -> Result<(), StoreError> {
+        let mut conn = self.lock()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM note_links WHERE source_note_id = ?1 OR target_note_id = ?1",
+            params![id.to_string()],
+        )?;
+        tx.execute(
+            "UPDATE timeline_events SET note_id = NULL WHERE note_id = ?1",
+            params![id.to_string()],
+        )?;
+        tx.execute("DELETE FROM notes WHERE id = ?1", params![id.to_string()])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn search_notes(&self, query: &str, limit: usize) -> Result<Vec<Note>, StoreError> {
+        let normalized = query.trim();
+        if normalized.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock()?;
+        let pattern = format!("%{}%", normalized);
+        let mut statement = conn.prepare(
+            "SELECT id, title, content, subject, tags, source_url, created_at, updated_at
+             FROM notes
+             WHERE title LIKE ?1 OR content LIKE ?1 OR subject LIKE ?1
+             ORDER BY updated_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![pattern, limit as i64], map_note_row)?;
+        let mut notes = Vec::new();
+        for row in rows {
+            notes.push(row?);
+        }
+        Ok(notes)
+    }
+
+    pub fn list_subjects(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement =
+            conn.prepare("SELECT DISTINCT subject FROM notes ORDER BY subject COLLATE NOCASE")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut subjects = Vec::new();
+        for row in rows {
+            subjects.push(row?);
+        }
+        Ok(subjects)
+    }
+
+    // === Timeline Events ===
+
+    pub fn create_timeline_event(&self, event: &TimelineEvent) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO timeline_events (id, title, description, start_date, end_date, subject, note_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                event.id.to_string(),
+                event.title,
+                event.description,
+                event.start_date.timestamp(),
+                event.end_date.map(|d| d.timestamp()),
+                event.subject,
+                event.note_id.map(|id| id.to_string()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_timeline_events(
+        &self,
+        subject: Option<&str>,
+    ) -> Result<Vec<TimelineEvent>, StoreError> {
+        let conn = self.lock()?;
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match subject {
+            Some(s) if !s.is_empty() => (
+                "SELECT id, title, description, start_date, end_date, subject, note_id FROM timeline_events WHERE subject = ?1 ORDER BY start_date",
+                vec![Box::new(s.to_string()) as Box<dyn rusqlite::ToSql>],
+            ),
+            _ => (
+                "SELECT id, title, description, start_date, end_date, subject, note_id FROM timeline_events ORDER BY start_date",
+                vec![],
+            ),
+        };
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut statement = conn.prepare(sql)?;
+        let rows = statement.query_map(params_refs.as_slice(), map_timeline_event_row)?;
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(row?);
+        }
+        Ok(events)
+    }
+
+    pub fn get_timeline_event(&self, id: Id) -> Result<Option<TimelineEvent>, StoreError> {
+        let conn = self.lock()?;
+        let result = conn.query_row(
+            "SELECT id, title, description, start_date, end_date, subject, note_id FROM timeline_events WHERE id = ?1",
+            params![id.to_string()],
+            map_timeline_event_row,
+        ).optional()?;
+        Ok(result)
+    }
+
+    pub fn delete_timeline_event(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM timeline_events WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    // === Grammar Rules ===
+
+    pub fn create_grammar_rule(&self, rule: &GrammarRule) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO grammar_rules (id, title, category, explanation, examples, counter_examples, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                rule.id.to_string(),
+                rule.title,
+                rule.category,
+                rule.explanation,
+                serde_json::to_string(&rule.examples).unwrap_or_else(|_| "[]".to_string()),
+                serde_json::to_string(&rule.counter_examples).unwrap_or_else(|_| "[]".to_string()),
+                rule.created_at.timestamp(),
+                rule.updated_at.timestamp(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_grammar_rule(&self, rule: &GrammarRule) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE grammar_rules SET title = ?1, category = ?2, explanation = ?3, examples = ?4, counter_examples = ?5, updated_at = ?6 WHERE id = ?7",
+            params![
+                rule.title,
+                rule.category,
+                rule.explanation,
+                serde_json::to_string(&rule.examples).unwrap_or_else(|_| "[]".to_string()),
+                serde_json::to_string(&rule.counter_examples).unwrap_or_else(|_| "[]".to_string()),
+                rule.updated_at.timestamp(),
+                rule.id.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_grammar_rule(&self, id: Id) -> Result<Option<GrammarRule>, StoreError> {
+        let conn = self.lock()?;
+        let result = conn.query_row(
+            "SELECT id, title, category, explanation, examples, counter_examples, created_at, updated_at FROM grammar_rules WHERE id = ?1",
+            params![id.to_string()],
+            map_grammar_rule_row,
+        ).optional()?;
+        Ok(result)
+    }
+
+    pub fn list_grammar_rules(
+        &self,
+        category: Option<&str>,
+    ) -> Result<Vec<GrammarRule>, StoreError> {
+        let conn = self.lock()?;
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match category {
+            Some(c) if !c.is_empty() => (
+                "SELECT id, title, category, explanation, examples, counter_examples, created_at, updated_at FROM grammar_rules WHERE category = ?1 ORDER BY title COLLATE NOCASE",
+                vec![Box::new(c.to_string()) as Box<dyn rusqlite::ToSql>],
+            ),
+            _ => (
+                "SELECT id, title, category, explanation, examples, counter_examples, created_at, updated_at FROM grammar_rules ORDER BY title COLLATE NOCASE",
+                vec![],
+            ),
+        };
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut statement = conn.prepare(sql)?;
+        let rows = statement.query_map(params_refs.as_slice(), map_grammar_rule_row)?;
+        let mut rules = Vec::new();
+        for row in rows {
+            rules.push(row?);
+        }
+        Ok(rules)
+    }
+
+    pub fn delete_grammar_rule(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM grammar_rules WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_grammar_categories(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT DISTINCT category FROM grammar_rules ORDER BY category COLLATE NOCASE",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut categories = Vec::new();
+        for row in rows {
+            categories.push(row?);
+        }
+        Ok(categories)
+    }
+
+    // === Sources ===
+
+    pub fn create_source(&self, source: &Source) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO sources (id, url, title, author, imported_at, browser_history_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                source.id.to_string(),
+                source.url,
+                source.title,
+                source.author,
+                source.imported_at.timestamp(),
+                source.browser_history_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_sources(&self) -> Result<Vec<Source>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare("SELECT id, url, title, author, imported_at, browser_history_id FROM sources ORDER BY imported_at DESC")?;
+        let rows = statement.query_map([], map_source_row)?;
+        let mut sources = Vec::new();
+        for row in rows {
+            sources.push(row?);
+        }
+        Ok(sources)
+    }
+
+    // === Note Links ===
+
+    pub fn create_note_link(&self, link: &NoteLink) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO note_links (id, source_note_id, target_note_id, link_type)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                link.id.to_string(),
+                link.source_note_id.to_string(),
+                link.target_note_id.to_string(),
+                link.link_type,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_note_links_for_note(&self, note_id: Id) -> Result<Vec<NoteLink>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT id, source_note_id, target_note_id, link_type FROM note_links WHERE source_note_id = ?1 OR target_note_id = ?1",
+        )?;
+        let rows = statement.query_map(params![note_id.to_string()], map_note_link_row)?;
+        let mut links = Vec::new();
+        for row in rows {
+            links.push(row?);
+        }
+        Ok(links)
+    }
+
+    pub fn delete_note_link(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM note_links WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
 }
 
 fn map_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
@@ -847,4 +1212,69 @@ fn map_review_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReviewLog> {
 
 fn unused_uuid() -> Id {
     uuid::Uuid::new_v4()
+}
+
+fn map_note_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
+    let tags: String = row.get(4)?;
+    Ok(Note {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        title: row.get(1)?,
+        content: row.get(2)?,
+        subject: row.get(3)?,
+        tags: serde_json::from_str(&tags).unwrap_or_default(),
+        source_url: row.get(5)?,
+        created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(Utc::now),
+        updated_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap_or_else(Utc::now),
+    })
+}
+
+fn map_timeline_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TimelineEvent> {
+    Ok(TimelineEvent {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        title: row.get(1)?,
+        description: row.get(2)?,
+        start_date: DateTime::from_timestamp(row.get(3)?, 0).unwrap_or_else(Utc::now),
+        end_date: row
+            .get::<_, Option<i64>>(4)?
+            .map(|value| DateTime::from_timestamp(value, 0).unwrap_or_else(Utc::now)),
+        subject: row.get(5)?,
+        note_id: row
+            .get::<_, Option<String>>(6)?
+            .map(|v| v.parse().unwrap_or_else(|_| Id::nil())),
+    })
+}
+
+fn map_grammar_rule_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GrammarRule> {
+    let examples: String = row.get(4)?;
+    let counter_examples: String = row.get(5)?;
+    Ok(GrammarRule {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        title: row.get(1)?,
+        category: row.get(2)?,
+        explanation: row.get(3)?,
+        examples: serde_json::from_str(&examples).unwrap_or_default(),
+        counter_examples: serde_json::from_str(&counter_examples).unwrap_or_default(),
+        created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap_or_else(Utc::now),
+        updated_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap_or_else(Utc::now),
+    })
+}
+
+fn map_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Source> {
+    Ok(Source {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        url: row.get(1)?,
+        title: row.get(2)?,
+        author: row.get(3)?,
+        imported_at: DateTime::from_timestamp(row.get(4)?, 0).unwrap_or_else(Utc::now),
+        browser_history_id: row.get(5)?,
+    })
+}
+
+fn map_note_link_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteLink> {
+    Ok(NoteLink {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        source_note_id: row.get::<_, String>(1)?.parse().unwrap(),
+        target_note_id: row.get::<_, String>(2)?.parse().unwrap(),
+        link_type: row.get(3)?,
+    })
 }
