@@ -46,6 +46,7 @@ impl Store {
                 conn.pragma_update(None, "user_version", expected_version)?;
             }
         }
+        seed_database(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -1555,6 +1556,193 @@ fn map_note_link_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteLink> {
         target_note_id: row.get::<_, String>(2)?.parse().unwrap(),
         link_type: row.get(3)?,
     })
+}
+
+fn seed_database(conn: &Connection) -> Result<(), StoreError> {
+    // Only seed if the database is empty (no notes exist yet)
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?;
+    if count > 0 {
+        return Ok(());
+    }
+
+    let now = Utc::now().timestamp();
+
+    // === Stock Notes ===
+    let stock_notes = [
+        (
+            "How to Write a Thesis Statement",
+            "A thesis statement is the central argument of your essay. It should be:\n- Specific and focused\n- Arguable (not just a fact)\n- Supportable with evidence\n- Placed at the end of your introduction\n\nExample: 'The use of symbolism in The Great Gatsby reveals the hollowness of the American Dream.'",
+            "English",
+            vec!["writing", "thesis", "essay"],
+        ),
+        (
+            "Primary vs Secondary Sources",
+            "Primary sources are original materials from the time period being studied (diaries, letters, photographs, official documents).\nSecondary sources interpret or analyze primary sources (textbooks, academic articles, documentaries).\n\nAlways prioritize primary sources when available, and use secondary sources for context and interpretation.",
+            "History",
+            vec!["research", "sources", "methodology"],
+        ),
+        (
+            "The Five-Paragraph Essay Structure",
+            "1. Introduction (hook, context, thesis)\n2. Body Paragraph 1 (topic sentence, evidence, analysis)\n3. Body Paragraph 2 (topic sentence, evidence, analysis)\n4. Body Paragraph 3 (topic sentence, evidence, analysis)\n5. Conclusion (restate thesis, summarize, final thought)",
+            "English",
+            vec!["writing", "structure", "essay"],
+        ),
+        (
+            "How to Cite Sources in MLA Format",
+            "In-text citation: (Author PageNumber)\nWorks Cited: Author Last, First. \"Title of Article.\" Title of Container, Publisher, Year, pp. pages.\n\nExample: (Smith 42)",
+            "English",
+            vec!["citation", "mla", "research"],
+        ),
+        (
+            "The Scientific Method in Historical Research",
+            "1. Ask a question about the past\n2. Conduct background research\n3. Form a hypothesis\n4. Gather and analyze primary sources\n5. Draw conclusions\n6. Communicate results",
+            "History",
+            vec!["methodology", "research", "history"],
+        ),
+    ];
+
+    for (title, content, subject, tags) in stock_notes.iter() {
+        let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT INTO notes (id, title, content, subject, tags, source_url, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                title,
+                content,
+                subject,
+                tags_json,
+                Option::<String>::None,
+                now,
+                now,
+            ],
+        )?;
+    }
+
+    // === Stock Timeline Events ===
+    let stock_events = [
+        ("Fall of the Western Roman Empire", "The traditional date for the fall of Rome, marking the end of antiquity and the beginning of the Middle Ages in Europe.", "476-09-04", None, "History"),
+        ("Magna Carta Signed", "King John of England agrees to the Magna Carta, establishing the principle that everybody, including the king, is subject to the law.", "1215-06-15", None, "History"),
+        ("Christopher Columbus Reaches the Americas", "Columbus lands in the Bahamas, initiating sustained European contact with the Americas.", "1492-10-12", None, "History"),
+        ("Declaration of Independence", "The Thirteen American Colonies declare independence from Great Britain.", "1776-07-04", None, "History"),
+        ("French Revolution Begins", "The Storming of the Bastille marks the start of the French Revolution.", "1789-07-14", None, "History"),
+        ("World War I Ends", "The Armistice of November 11, 1918 ends fighting on the Western Front.", "1918-11-11", None, "History"),
+        ("World War II Ends", "Germany surrenders, ending World War II in Europe (V-E Day).", "1945-05-08", None, "History"),
+        ("First Moon Landing", "Apollo 11 lands on the Moon; Neil Armstrong becomes the first person to walk on the lunar surface.", "1969-07-20", None, "History"),
+        ("Fall of the Berlin Wall", "The Berlin Wall falls, symbolizing the end of the Cold War division of Europe.", "1989-11-09", None, "History"),
+    ];
+
+    for (title, description, start_date, end_date, subject) in stock_events.iter() {
+        let start = chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        let end = end_date.map(|d| {
+            chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .unwrap()
+                .and_hms_opt(23, 59, 59)
+                .unwrap()
+                .and_utc()
+                .timestamp()
+        });
+        conn.execute(
+            "INSERT INTO timeline_events (id, title, description, start_date, end_date, subject, note_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                title,
+                description,
+                start,
+                end,
+                subject,
+                Option::<String>::None,
+            ],
+        )?;
+    }
+
+    // === Stock Grammar Rules ===
+    let stock_rules = [
+        (
+            "Subject-Verb Agreement",
+            "Grammar",
+            "The subject and verb must agree in number. Singular subjects take singular verbs; plural subjects take plural verbs.\n\nExample: 'The cat runs' (singular) vs. 'The cats run' (plural).",
+            vec!["The dog barks loudly.", "The dogs bark loudly.", "She writes every day.", "They write every day."],
+            vec!["The dog bark loudly.", "The dogs barks loudly.", "She write every day.", "They writes every day."],
+        ),
+        (
+            "Comma Splice",
+            "Punctuation",
+            "A comma splice occurs when two independent clauses are joined by only a comma. Use a period, semicolon, or comma + coordinating conjunction instead.\n\nIncorrect: 'I went to the store, I bought milk.'\nCorrect: 'I went to the store. I bought milk.'",
+            vec!["I finished my homework, and then I went to bed.", "She studied hard; she passed the exam."],
+            vec!["I finished my homework, I went to bed.", "She studied hard, she passed the exam."],
+        ),
+        (
+            "Its vs. It's",
+            "Spelling",
+            "'Its' is possessive (belonging to it). 'It's' is a contraction of 'it is' or 'it has'.\n\nExample: 'The cat licked its paws.' vs. 'It's raining outside.'",
+            vec!["The company changed its policy.", "It's important to study regularly."],
+            vec!["The company changed it's policy.", "Its important to study regularly."],
+        ),
+        (
+            "There vs. Their vs. They're",
+            "Spelling",
+            "'There' indicates location. 'Their' is possessive. 'They're' is a contraction of 'they are'.\n\nExample: 'They're going to their house over there.'",
+            vec!["There is a book on the table.", "Their car is blue.", "They're coming to the party."],
+            vec!["Their is a book on the table.", "There car is blue.", "Theyre coming to the party."],
+        ),
+        (
+            "Affect vs. Effect",
+            "Spelling",
+            "'Affect' is usually a verb (to influence). 'Effect' is usually a noun (a result).\n\nExample: 'The weather affected our plans.' vs. 'The effect was immediate.'",
+            vec!["How will this affect your grade?", "The effect was immediate."],
+            vec!["How will this effect your grade?", "The affect was immediate."],
+        ),
+        (
+            "Semicolon Usage",
+            "Punctuation",
+            "Use a semicolon to join two closely related independent clauses without a coordinating conjunction, or to separate items in a complex list.\n\nExample: 'I have a big test tomorrow; I can't go out tonight.'",
+            vec!["I love reading; it relaxes me.", "She visited Paris, France; London, England; and Rome, Italy."],
+            vec!["I love reading; it relaxes me.", "She visited Paris France London England and Rome Italy."],
+        ),
+        (
+            "Active vs. Passive Voice",
+            "Style",
+            "Active voice: the subject performs the action. Passive voice: the subject receives the action. Active voice is generally clearer and more direct.\n\nPassive: 'The ball was thrown by John.'\nActive: 'John threw the ball.'",
+            vec!["The committee approved the proposal.", "Scientists discovered a new species."],
+            vec!["The proposal was approved by the committee.", "A new species was discovered by scientists."],
+        ),
+        (
+            "Dangling Modifiers",
+            "Style",
+            "A dangling modifier is a word or phrase that modifies a word not clearly stated in the sentence.\n\nIncorrect: 'Walking to school, the bus arrived.'\nCorrect: 'Walking to school, I saw the bus arrive.'",
+            vec!["After finishing the assignment, I went to sleep.", "While studying for the exam, she drank coffee."],
+            vec!["After finishing the assignment, the sleep came.", "While studying for the exam, the coffee was drunk."],
+        ),
+    ];
+
+    for (title, category, explanation, examples, counter_examples) in stock_rules.iter() {
+        let examples_json = serde_json::to_string(examples).unwrap_or_else(|_| "[]".to_string());
+        let counter_examples_json =
+            serde_json::to_string(counter_examples).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT INTO grammar_rules (id, title, category, explanation, examples, counter_examples, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                uuid::Uuid::new_v4().to_string(),
+                title,
+                category,
+                explanation,
+                examples_json,
+                counter_examples_json,
+                now,
+                now,
+            ],
+        )?;
+    }
+
+    Ok(())
 }
 
 fn map_pending_import_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PendingImport> {
