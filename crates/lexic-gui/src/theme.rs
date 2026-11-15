@@ -40,12 +40,39 @@ pub const STRUCTURAL: Color = Color::from_rgb8(168, 85, 247);
 pub const ACCENT: Color = Color::from_rgb8(77, 142, 255);
 pub const ACCENT_HOVER: Color = Color::from_rgb8(59, 130, 246);
 
+// Subject color palette for humanities categorization
+// Each subject gets a consistent color across notes, timelines, grammar rules
+pub fn subject_color(subject: &str) -> Color {
+    match subject {
+        "History" => Color::from_rgb8(230, 126, 34), // warm amber
+        "English" => Color::from_rgb8(173, 198, 255), // soft blue
+        "Philosophy" => Color::from_rgb8(168, 85, 247), // purple
+        "Art" => Color::from_rgb8(255, 180, 171),    // soft red/pink
+        "Music" => Color::from_rgb8(245, 158, 11),   // orange
+        "Literature" => Color::from_rgb8(78, 222, 163), // green
+        "Languages" => Color::from_rgb8(164, 201, 255), // light blue
+        "Classics" => Color::from_rgb8(236, 72, 153), // rose
+        "Geography" => Color::from_rgb8(34, 211, 238), // cyan
+        "Politics" => Color::from_rgb8(59, 130, 246), // blue
+        "Economics" => Color::from_rgb8(251, 146, 60), // orange-amber
+        "Sociology" => Color::from_rgb8(190, 242, 100), // lime
+        "Anthropology" => Color::from_rgb8(234, 179, 8), // gold
+        "Archaeology" => Color::from_rgb8(181, 126, 220), // violet
+        "Religion" => Color::from_rgb8(225, 29, 72), // red
+        _ => Color::from_rgb8(164, 201, 255),        // default: secondary blue
+    }
+}
+
 pub fn font_body() -> Font {
     Font::with_name("Inter")
 }
 
 pub fn font_code() -> Font {
     Font::with_name("JetBrains Mono")
+}
+
+pub fn font_serif() -> Font {
+    Font::with_name("Literata")
 }
 
 pub fn shadow_sm() -> Shadow {
@@ -264,6 +291,21 @@ pub fn themed_input() -> impl Fn(&Theme, text_input::Status) -> text_input::Styl
 }
 
 pub fn text_editor_style()
+-> impl Fn(&Theme, iced::widget::text_editor::Status) -> iced::widget::text_editor::Style {
+    move |_theme, _status| iced::widget::text_editor::Style {
+        background: iced::Background::Color(BG_CONTAINER_LOWEST),
+        border: iced::Border {
+            radius: 0.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        placeholder: TEXT_MUTED,
+        value: TEXT_PRIMARY,
+        selection: PRIMARY_CONTAINER,
+    }
+}
+
+pub fn text_editor_serif_style()
 -> impl Fn(&Theme, iced::widget::text_editor::Status) -> iced::widget::text_editor::Style {
     move |_theme, _status| iced::widget::text_editor::Style {
         background: iced::Background::Color(BG_CONTAINER_LOWEST),

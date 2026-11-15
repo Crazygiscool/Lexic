@@ -18,7 +18,8 @@ impl App {
                     .font(theme::font_code()),
                 text("Historical events and chronologies")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),
@@ -115,14 +116,7 @@ impl App {
                     ),
                     (start, None) => start.format("%b %d, %Y").to_string(),
                 };
-                let subject_color = match event.subject.as_str() {
-                    "History" => theme::TERTIARY,
-                    "English" => theme::PRIMARY,
-                    "Philosophy" => theme::STRUCTURAL,
-                    "Art" => theme::ERROR,
-                    "Music" => theme::WARNING,
-                    _ => theme::SECONDARY,
-                };
+                let subject_color = theme::subject_color(&event.subject);
                 list = list.push(
                     button(
                         row![
@@ -231,7 +225,8 @@ impl App {
                 .font(theme::font_code()),
                 text("Place events on your historical timeline.")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),

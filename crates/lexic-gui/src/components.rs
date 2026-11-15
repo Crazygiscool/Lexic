@@ -97,13 +97,19 @@ pub fn section_label<'a, Message: 'a>(title: &'static str) -> Element<'a, Messag
 pub fn empty_state<'a, Message: 'a>(title: &'static str, detail: String) -> Element<'a, Message> {
     container(
         column![
-            text(title).size(16).color(theme::TEXT_PRIMARY),
-            text(detail).size(13).color(theme::TEXT_MUTED),
+            text(title)
+                .size(20)
+                .color(theme::TEXT_PRIMARY)
+                .font(theme::font_serif()),
+            text(detail)
+                .size(13)
+                .color(theme::TEXT_MUTED)
+                .font(theme::font_serif()),
         ]
-        .spacing(6)
+        .spacing(8)
         .align_x(iced::Alignment::Center),
     )
-    .padding(24)
+    .padding(32)
     .width(Length::Fill)
     .align_x(iced::Alignment::Center)
     .style(theme::panel_flat(

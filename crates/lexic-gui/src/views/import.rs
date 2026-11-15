@@ -18,7 +18,8 @@ impl App {
                     .font(theme::font_code()),
                 text("Bring web pages into your knowledge base")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),

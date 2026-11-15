@@ -94,14 +94,7 @@ impl App {
             let mut list = column![].spacing(6);
             for rule in rules {
                 let selected = self.grammar_selected_id == Some(rule.id);
-                let category_color = match rule.category.as_str() {
-                    "Syntax" => theme::TERTIARY,
-                    "Punctuation" => theme::PRIMARY,
-                    "Style" => theme::STRUCTURAL,
-                    "Spelling" => theme::ERROR,
-                    "Usage" => theme::WARNING,
-                    _ => theme::SECONDARY,
-                };
+                let category_color = theme::subject_color(&rule.category);
                 list = list.push(
                     button(
                         row![
@@ -205,7 +198,8 @@ impl App {
                 .font(theme::font_code()),
                 text("Define grammar rules for your writing reference.")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),

@@ -201,7 +201,8 @@ impl App {
                         .font(theme::font_code()),
                     text("Your study snapshot and a window into the dictionary.")
                         .size(12)
-                        .color(theme::TEXT_MUTED),
+                        .color(theme::TEXT_MUTED)
+                        .font(theme::font_serif()),
                 ]
                 .spacing(4),
                 Space::new().width(Length::Fill),

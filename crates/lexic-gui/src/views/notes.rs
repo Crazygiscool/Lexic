@@ -35,7 +35,8 @@ impl App {
                     .font(theme::font_code()),
                 text("Your humanities knowledge base")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),
@@ -158,10 +159,11 @@ impl App {
                                     })
                                     .font(theme::font_code()),
                                 row![
-                                    text(&note.subject)
-                                        .size(10)
-                                        .color(theme::TEXT_MUTED)
-                                        .font(theme::font_code()),
+                                    components::chip(
+                                        note.subject.clone(),
+                                        theme::subject_color(&note.subject),
+                                        theme::BG_CONTAINER_HIGH,
+                                    ),
                                     Space::new().width(6),
                                     tag_chips,
                                 ]
@@ -234,7 +236,8 @@ impl App {
                     .font(theme::font_code()),
                 text("Write in markdown. Your knowledge grows with every note.")
                     .size(12)
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_serif()),
             ]
             .spacing(4),
             Space::new().width(Length::Fill),
