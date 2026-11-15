@@ -53,4 +53,4 @@ pub struct DueCardPreview {
     pub deck_name: String,
 }
 
-pub const VERSION: &str = "1.1.2";
+pub const VERSION: &str = "1.2.0";
