@@ -105,6 +105,7 @@ jobs:
 
       - name: Build NSIS installer
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           choco install nsis -y --no-progress
           ./scripts/build-nsis.sh ${{ needs.gate.outputs.version }}
