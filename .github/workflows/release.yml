@@ -97,6 +97,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path target/release/lexic-gui.exe -DestinationPath dist/lexic-windows.zip
 
+      - name: Extract Windows assets
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Expand-Archive -Path dist/lexic-windows.zip -DestinationPath dist/lexic-windows
+
       - name: Build NSIS installer
         if: runner.os == 'Windows'
         run: |
