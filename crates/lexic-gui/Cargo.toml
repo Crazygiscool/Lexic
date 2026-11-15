@@ -21,6 +21,9 @@ tracing-appender = { workspace = true }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 iced_fonts = { version = "0.3", default-features = false, features = ["lucide"] }
 uuid = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-tls", "json"] }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
 [lints]
 workspace = true
 

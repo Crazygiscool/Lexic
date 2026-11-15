@@ -141,6 +141,14 @@ impl App {
             ),
             nav_link(
                 self,
+                Screen::Import,
+                upload(),
+                "Import History",
+                "\u{2325}8",
+                None
+            ),
+            nav_link(
+                self,
                 Screen::Review,
                 library(),
                 "Review Deck",
@@ -309,6 +317,7 @@ impl App {
             Screen::TimelineDetail(_) => self.timeline_detail_view(),
             Screen::GrammarRules => self.grammar_rules_view(),
             Screen::GrammarRuleDetail(_) => self.grammar_rule_detail_view(),
+            Screen::Import => self.import_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),

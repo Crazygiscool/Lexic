@@ -3,7 +3,9 @@
 #![allow(clippy::single_match)]
 #![allow(dead_code)]
 
-use lexic_core::model::{Card, Deck, Entry, GrammarRule, Id, Note, Sense, TimelineEvent};
+use lexic_core::model::{
+    Card, Deck, Entry, GrammarRule, Id, ImportStatus, Note, PendingImport, Sense, TimelineEvent,
+};
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
 use lexic_dict::{DictionaryClient, LookupResult, normalize};
@@ -93,6 +95,7 @@ pub enum Screen {
     TimelineDetail(lexic_core::model::Id),
     GrammarRules,
     GrammarRuleDetail(lexic_core::model::Id),
+    Import,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -188,6 +191,15 @@ pub struct App {
     pub(crate) grammar_editor_counter_examples: String,
     pub(crate) grammar_editor_status: Option<String>,
     pub(crate) grammar_selected_id: Option<lexic_core::model::Id>,
+
+    pub(crate) pending_imports: Vec<PendingImport>,
+    pub(crate) import_status: Option<String>,
+    pub(crate) import_browser: String,
+    pub(crate) import_llm_provider: String,
+    pub(crate) import_llm_endpoint: String,
+    pub(crate) import_llm_model: String,
+    pub(crate) import_llm_api_key: String,
+    pub(crate) import_is_categorizing: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -360,6 +372,25 @@ pub enum Message {
     GrammarRuleDeleted(Result<(), String>),
     CancelGrammarRuleEdit,
     GrammarRuleOpened(Option<GrammarRule>),
+
+    LoadPendingImports,
+    PendingImportsLoaded(Vec<PendingImport>),
+    ImportBrowserHistory,
+    ImportHistoryFinished(Result<Vec<PendingImport>, String>),
+    CategorizeWithLLM,
+    CategorizationFinished(Result<Vec<PendingImport>, String>),
+    ApproveImport(lexic_core::model::Id),
+    RejectImport(lexic_core::model::Id),
+    DeleteImport(lexic_core::model::Id),
+    ImportBrowserChanged(String),
+    ImportLLMProviderChanged(String),
+    ImportLLMEndpointChanged(String),
+    ImportLLMModelChanged(String),
+    ImportLLMApiKeyChanged(String),
+    ImportSelected(lexic_core::model::Id),
+    ImportSubjectChanged(lexic_core::model::Id, String),
+    ImportTagsChanged(lexic_core::model::Id, String),
+    ImportReviewFinished,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -461,6 +492,15 @@ impl App {
             grammar_editor_counter_examples: String::new(),
             grammar_editor_status: None,
             grammar_selected_id: None,
+
+            pending_imports: Vec::new(),
+            import_status: None,
+            import_browser: String::from("Chrome"),
+            import_llm_provider: String::from("Ollama"),
+            import_llm_endpoint: String::from("http://localhost:11434"),
+            import_llm_model: String::from("llama3.2"),
+            import_llm_api_key: String::new(),
+            import_is_categorizing: false,
         };
         let task = if let Some(store) = app.store.clone() {
             let store_for_stats = store.clone();
@@ -651,6 +691,9 @@ impl App {
                 if screen == Screen::GrammarRules {
                     return self.update(Message::LoadGrammarRules);
                 }
+                if screen == Screen::Import {
+                    return self.update(Message::LoadPendingImports);
+                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -678,6 +721,7 @@ impl App {
                                 "7" => return self.update(Message::Navigate(Screen::GrammarRules)),
                                 "8" => return self.update(Message::Navigate(Screen::Search)),
                                 "9" => return self.update(Message::Navigate(Screen::Settings)),
+                                "0" => return self.update(Message::Navigate(Screen::Import)),
                                 _ => {}
                             },
                             _ => {}
@@ -2129,6 +2173,229 @@ impl App {
                 self.screen = Screen::GrammarRules;
                 Task::none()
             }
+
+            // === Browser History Import ===
+            Message::LoadPendingImports => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .list_pending_imports(Some(ImportStatus::Pending))
+                            .unwrap_or_default()
+                    },
+                    Message::PendingImportsLoaded,
+                )
+            }
+            Message::PendingImportsLoaded(imports) => {
+                self.pending_imports = imports;
+                Task::none()
+            }
+            Message::ImportBrowserHistory => {
+                let store = self.store.clone().unwrap();
+                let browser = self.import_browser.clone();
+                let llm_provider = self.import_llm_provider.clone();
+                let llm_endpoint = self.import_llm_endpoint.clone();
+                let llm_model = self.import_llm_model.clone();
+                let _llm_api_key = self.import_llm_api_key.clone();
+                self.import_status = Some(format!("Importing from {}...", browser));
+                self.import_is_categorizing = false;
+                Task::perform(
+                    async move {
+                        let entries = fetch_browser_history(&browser).map_err(|e| e.to_string())?;
+                        let mut pending = Vec::new();
+                        for entry in entries {
+                            let id = Uuid::new_v4();
+                            let now = now_utc();
+                            let category = if llm_provider == "Ollama" {
+                                categorize_with_ollama(
+                                    &llm_endpoint,
+                                    &llm_model,
+                                    entry.title.as_deref().unwrap_or(""),
+                                    &entry.url,
+                                )
+                                .await
+                                .ok()
+                                .flatten()
+                            } else {
+                                None
+                            };
+                            pending.push(PendingImport {
+                                id,
+                                url: entry.url,
+                                title: entry.title,
+                                suggested_subject: category
+                                    .clone()
+                                    .unwrap_or_else(|| String::from("General")),
+                                suggested_tags: vec![],
+                                llm_category: category,
+                                llm_confidence: None,
+                                status: ImportStatus::Pending,
+                                created_at: now,
+                                reviewed_at: None,
+                            });
+                        }
+                        for p in &pending {
+                            store
+                                .create_pending_import(p)
+                                .map_err(|error| error.to_string())?;
+                        }
+                        Ok(pending)
+                    },
+                    Message::ImportHistoryFinished,
+                )
+            }
+            Message::ImportHistoryFinished(result) => {
+                match result {
+                    Ok(imports) => {
+                        self.import_status = Some(format!(
+                            "Imported {} entries from browser history",
+                            imports.len()
+                        ));
+                        self.pending_imports = imports;
+                        self.screen = Screen::Import;
+                    }
+                    Err(error) => self.import_status = Some(format!("Import failed: {error}")),
+                }
+                self.import_is_categorizing = false;
+                Task::none()
+            }
+            Message::CategorizeWithLLM => {
+                self.import_is_categorizing = true;
+                let store = self.store.clone().unwrap();
+                let llm_endpoint = self.import_llm_endpoint.clone();
+                let llm_model = self.import_llm_model.clone();
+                let imports = self.pending_imports.clone();
+                Task::perform(
+                    async move {
+                        let mut updated = Vec::new();
+                        for mut imp in imports {
+                            if let Some(category) = categorize_with_ollama(
+                                &llm_endpoint,
+                                &llm_model,
+                                imp.title.as_deref().unwrap_or(""),
+                                &imp.url,
+                            )
+                            .await
+                            .ok()
+                            .flatten()
+                            {
+                                imp.llm_category = Some(category.clone());
+                                imp.suggested_subject = category;
+                            }
+                            updated.push(imp);
+                        }
+                        for imp in &updated {
+                            store
+                                .create_pending_import(imp)
+                                .map_err(|error| error.to_string())?;
+                        }
+                        Ok(updated)
+                    },
+                    Message::CategorizationFinished,
+                )
+            }
+            Message::CategorizationFinished(result) => {
+                match result {
+                    Ok(imports) => {
+                        self.pending_imports = imports;
+                        self.import_status = Some(String::from("Categorization complete"));
+                    }
+                    Err(error) => {
+                        self.import_status = Some(format!("Categorization failed: {error}"))
+                    }
+                }
+                self.import_is_categorizing = false;
+                Task::none()
+            }
+            Message::ApproveImport(id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .approve_pending_import(id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    |_result: Result<(), String>| Message::ImportReviewFinished,
+                )
+            }
+            Message::RejectImport(id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .reject_pending_import(id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    |_result: Result<(), String>| Message::ImportReviewFinished,
+                )
+            }
+            Message::DeleteImport(id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .delete_pending_import(id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    |_result: Result<(), String>| Message::ImportReviewFinished,
+                )
+            }
+            Message::ImportBrowserChanged(value) => {
+                self.import_browser = value;
+                Task::none()
+            }
+            Message::ImportLLMProviderChanged(value) => {
+                self.import_llm_provider = value;
+                Task::none()
+            }
+            Message::ImportLLMEndpointChanged(value) => {
+                self.import_llm_endpoint = value;
+                Task::none()
+            }
+            Message::ImportLLMModelChanged(value) => {
+                self.import_llm_model = value;
+                Task::none()
+            }
+            Message::ImportLLMApiKeyChanged(value) => {
+                self.import_llm_api_key = value;
+                Task::none()
+            }
+            Message::ImportSelected(id) => {
+                self.grammar_selected_id = Some(id);
+                Task::none()
+            }
+            Message::ImportSubjectChanged(id, subject) => {
+                if let Some(imp) = self.pending_imports.iter_mut().find(|i| i.id == id) {
+                    imp.suggested_subject = subject;
+                }
+                Task::none()
+            }
+            Message::ImportTagsChanged(id, tags) => {
+                if let Some(imp) = self.pending_imports.iter_mut().find(|i| i.id == id) {
+                    imp.suggested_tags = tags
+                        .split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect();
+                }
+                Task::none()
+            }
+            Message::ImportReviewFinished => {
+                self.import_status = Some(String::from("Import review complete"));
+                let _ = self.update(Message::LoadPendingImports);
+                Task::none()
+            }
         }
     }
     fn start_lookup(&mut self) -> Task<Message> {
@@ -2266,4 +2533,160 @@ fn rand_u128() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos()
+}
+
+#[derive(Debug, Clone)]
+struct BrowserHistoryEntry {
+    url: String,
+    title: Option<String>,
+    visit_count: i32,
+    last_visit: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+fn fetch_browser_history(browser: &str) -> Result<Vec<BrowserHistoryEntry>, String> {
+    let home = directories::UserDirs::new()
+        .ok_or_else(|| String::from("Cannot determine home directory"))?;
+    let home_path = home.home_dir();
+
+    let (db_paths, query) = match browser {
+        "Chrome" => {
+            let path = if cfg!(target_os = "macos") {
+                home_path.join("Library/Application Support/Google/Chrome/Default/History")
+            } else if cfg!(target_os = "windows") {
+                home_path.join("AppData/Local/Google/Chrome/User Data/Default/History")
+            } else {
+                home_path.join(".config/google-chrome/Default/History")
+            };
+            (
+                vec![path],
+                "SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 200".to_string(),
+            )
+        }
+        "Firefox" => {
+            // Find Firefox profile
+            let profiles_dir = if cfg!(target_os = "macos") {
+                home_path.join("Library/Application Support/Firefox/Profiles")
+            } else if cfg!(target_os = "windows") {
+                home_path.join("AppData/Roaming/Mozilla/Firefox/Profiles")
+            } else {
+                home_path.join(".mozilla/firefox")
+            };
+            let mut paths = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&profiles_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let places = path.join("places.sqlite");
+                        if places.exists() {
+                            paths.push(places);
+                        }
+                    }
+                }
+            }
+            if paths.is_empty() {
+                return Err(String::from("No Firefox profile found"));
+            }
+            (
+                paths,
+                "SELECT url, title, visit_count, last_visit_date FROM moz_places ORDER BY last_visit_date DESC LIMIT 200".to_string(),
+            )
+        }
+        "Safari" => {
+            let path = home_path.join("Library/Safari/History.db");
+            (
+                vec![path],
+                "SELECT url, title, visit_count FROM history_items ORDER BY id DESC LIMIT 200"
+                    .to_string(),
+            )
+        }
+        _ => return Err(format!("Unsupported browser: {browser}")),
+    };
+
+    let mut all_entries = Vec::new();
+    for db_path in &db_paths {
+        if !db_path.exists() {
+            continue;
+        }
+        // Copy the database file to avoid lock issues
+        let temp_path = std::env::temp_dir().join(format!(
+            "lexic_history_{}_{}.db",
+            browser,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        if let Err(_e) = std::fs::copy(db_path, &temp_path) {
+            continue;
+        }
+        let conn = rusqlite::Connection::open(&temp_path)
+            .map_err(|e| format!("Cannot open database: {e}"))?;
+        let mut stmt = conn
+            .prepare(&query)
+            .map_err(|e| format!("Cannot prepare query: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(BrowserHistoryEntry {
+                    url: row.get::<_, String>(0)?,
+                    title: row.get::<_, Option<String>>(1).ok().flatten(),
+                    visit_count: row.get::<_, i32>(2).unwrap_or(0),
+                    last_visit: None,
+                })
+            })
+            .map_err(|e| format!("Cannot query: {e}"))?;
+        for row in rows.flatten() {
+            all_entries.push(row);
+        }
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    // Deduplicate by URL
+    let mut seen = std::collections::HashSet::new();
+    all_entries.retain(|e| seen.insert(e.url.clone()));
+
+    Ok(all_entries)
+}
+
+async fn categorize_with_ollama(
+    endpoint: &str,
+    model: &str,
+    title: &str,
+    url: &str,
+) -> Result<Option<String>, String> {
+    let client = reqwest::Client::new();
+    let prompt = format!(
+        "Categorize this web page into a humanities subject. Respond with only the subject name.\n\nPage title: {title}\nPage URL: {url}\n\nSubjects: History, English, Literature, Philosophy, Art, Music, Religion, Languages, Classics, Geography, Politics, Economics, Sociology, Anthropology, Archaeology, General\n\nSubject:",
+    );
+
+    let res = client
+        .post(format!("{endpoint}/api/generate"))
+        .json(&serde_json::json!({
+            "model": model,
+            "prompt": prompt,
+            "stream": false,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("LLM request failed: {e}"))?;
+
+    let text = res
+        .text()
+        .await
+        .map_err(|e| format!("LLM response failed: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("LLM JSON parse failed: {e}"))?;
+
+    let response = value["response"].as_str().unwrap_or("").trim();
+    let subject = response
+        .lines()
+        .next()
+        .unwrap_or("General")
+        .trim()
+        .to_string();
+
+    if subject.is_empty() {
+        Ok(Some(String::from("General")))
+    } else {
+        Ok(Some(subject))
+    }
 }

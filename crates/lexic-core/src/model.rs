@@ -174,3 +174,25 @@ pub struct NoteLink {
     pub target_note_id: Id,
     pub link_type: String,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PendingImport {
+    pub id: Id,
+    pub url: String,
+    pub title: Option<String>,
+    pub suggested_subject: String,
+    pub suggested_tags: Vec<String>,
+    pub llm_category: Option<String>,
+    pub llm_confidence: Option<f64>,
+    pub status: ImportStatus,
+    pub created_at: Timestamp,
+    pub reviewed_at: Option<Timestamp>,
+}

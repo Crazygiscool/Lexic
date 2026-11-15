@@ -18,6 +18,7 @@ const MIGRATIONS: &[(&str, usize)] = &[
     ),
     (include_str!("../migrations/0004_drop_transpilation.sql"), 4),
     (include_str!("../migrations/0005_humanities.sql"), 5),
+    (include_str!("../migrations/0006_pending_imports.sql"), 6),
 ];
 
 #[derive(Clone)]
@@ -1273,6 +1274,103 @@ impl Store {
         }
         Ok(result)
     }
+
+    // === Pending Imports ===
+
+    pub fn create_pending_import(&self, import: &PendingImport) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO pending_imports (id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                import.id.to_string(),
+                import.url,
+                import.title,
+                import.suggested_subject,
+                serde_json::to_string(&import.suggested_tags).unwrap_or_else(|_| "[]".to_string()),
+                import.llm_category,
+                import.llm_confidence,
+                match import.status {
+                    ImportStatus::Pending => "pending",
+                    ImportStatus::Approved => "approved",
+                    ImportStatus::Rejected => "rejected",
+                },
+                import.created_at.timestamp(),
+                import.reviewed_at.map(|d| d.timestamp()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_pending_imports(
+        &self,
+        status: Option<ImportStatus>,
+    ) -> Result<Vec<PendingImport>, StoreError> {
+        let conn = self.lock()?;
+        let (sql, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match status {
+            Some(ImportStatus::Pending) => (
+                "SELECT id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at FROM pending_imports WHERE status = 'pending' ORDER BY created_at DESC",
+                vec![],
+            ),
+            Some(ImportStatus::Approved) => (
+                "SELECT id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at FROM pending_imports WHERE status = 'approved' ORDER BY created_at DESC",
+                vec![],
+            ),
+            Some(ImportStatus::Rejected) => (
+                "SELECT id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at FROM pending_imports WHERE status = 'rejected' ORDER BY created_at DESC",
+                vec![],
+            ),
+            None => (
+                "SELECT id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at FROM pending_imports ORDER BY created_at DESC",
+                vec![],
+            ),
+        };
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut statement = conn.prepare(sql)?;
+        let rows = statement.query_map(params_refs.as_slice(), map_pending_import_row)?;
+        let mut imports = Vec::new();
+        for row in rows {
+            imports.push(row?);
+        }
+        Ok(imports)
+    }
+
+    pub fn get_pending_import(&self, id: Id) -> Result<Option<PendingImport>, StoreError> {
+        let conn = self.lock()?;
+        let result = conn.query_row(
+            "SELECT id, url, title, suggested_subject, suggested_tags, llm_category, llm_confidence, status, created_at, reviewed_at FROM pending_imports WHERE id = ?1",
+            params![id.to_string()],
+            map_pending_import_row,
+        ).optional()?;
+        Ok(result)
+    }
+
+    pub fn approve_pending_import(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE pending_imports SET status = 'approved', reviewed_at = ?1 WHERE id = ?2",
+            params![Utc::now().timestamp(), id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn reject_pending_import(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE pending_imports SET status = 'rejected', reviewed_at = ?1 WHERE id = ?2",
+            params![Utc::now().timestamp(), id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_pending_import(&self, id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM pending_imports WHERE id = ?1",
+            params![id.to_string()],
+        )?;
+        Ok(())
+    }
 }
 
 fn map_entry_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
@@ -1456,5 +1554,28 @@ fn map_note_link_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteLink> {
         source_note_id: row.get::<_, String>(1)?.parse().unwrap(),
         target_note_id: row.get::<_, String>(2)?.parse().unwrap(),
         link_type: row.get(3)?,
+    })
+}
+
+fn map_pending_import_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PendingImport> {
+    let tags: String = row.get(4)?;
+    let status_str: String = row.get(7)?;
+    Ok(PendingImport {
+        id: row.get::<_, String>(0)?.parse().unwrap(),
+        url: row.get(1)?,
+        title: row.get(2)?,
+        suggested_subject: row.get(3)?,
+        suggested_tags: serde_json::from_str(&tags).unwrap_or_default(),
+        llm_category: row.get(5)?,
+        llm_confidence: row.get(6)?,
+        status: match status_str.as_str() {
+            "approved" => ImportStatus::Approved,
+            "rejected" => ImportStatus::Rejected,
+            _ => ImportStatus::Pending,
+        },
+        created_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap_or_else(Utc::now),
+        reviewed_at: row
+            .get::<_, Option<i64>>(9)?
+            .map(|value| DateTime::from_timestamp(value, 0).unwrap_or_else(Utc::now)),
     })
 }
