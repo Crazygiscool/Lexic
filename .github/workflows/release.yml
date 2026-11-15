@@ -8,35 +8,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  gate:
-    name: Gate
-    runs-on: ubuntu-latest
-    outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-      version: ${{ steps.check.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check for release trigger
-        id: check
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            echo "should_release=false" >> $GITHUB_OUTPUT
-            echo "version=" >> $GITHUB_OUTPUT
-          fi
-
   build:
     name: Build (${{ matrix.os }})
-    needs: gate
-    if: needs.gate.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    if: github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,8 +79,8 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           choco install nsis -y --no-progress
-          ./scripts/build-nsis.sh ${{ needs.gate.outputs.version }}
-          cp dist/lexic-${{ needs.gate.outputs.version }}-windows-installer.exe dist/
+          ./scripts/build-nsis.sh ${{ github.ref_name }}
+          cp dist/lexic-${{ github.ref_name }}-windows-installer.exe dist/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -110,8 +89,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [gate, build]
-    if: needs.gate.outputs.should_release == 'true'
+    needs: build
+    if: github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -123,13 +102,13 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
-          tag_name: v${{ needs.gate.outputs.version }}
+          tag_name: ${{ github.ref_name }}
           generate_release_notes: true
 
   publish-crates:
     name: Publish to crates.io
-    needs: [gate, build]
-    if: needs.gate.outputs.should_release == 'true' && secrets.CARGO_REGISTRY_TOKEN != ''
+    needs: build
+    if: (github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')) && secrets.CARGO_REGISTRY_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,39 +122,39 @@ jobs:
 
   publish-homebrew:
     name: Publish to Homebrew
-    needs: [gate, build]
-    if: needs.gate.outputs.should_release == 'true' && secrets.HOMEBREW_TAP_TOKEN != ''
+    needs: build
+    if: (github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')) && secrets.HOMEBREW_TAP_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Publish Homebrew formula
-        run: ./scripts/publish-homebrew.sh ${{ needs.gate.outputs.version }}
+        run: ./scripts/publish-homebrew.sh ${{ github.ref_name }}
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   publish-chocolatey:
     name: Publish to Chocolatey
-    needs: [gate, build]
-    if: needs.gate.outputs.should_release == 'true' && secrets.CHOCOLATEY_API_KEY != ''
+    needs: build
+    if: (github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')) && secrets.CHOCOLATEY_API_KEY != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Publish to Chocolatey
-        run: ./scripts/publish-chocolatey.sh ${{ needs.gate.outputs.version }}
+        run: ./scripts/publish-chocolatey.sh ${{ github.ref_name }}
         env:
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
 
   publish-aur:
     name: Publish to AUR
-    needs: [gate, build]
-    if: needs.gate.outputs.should_release == 'true' && secrets.AUR_SSH_KEY != ''
+    needs: build
+    if: (github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')) && secrets.AUR_SSH_KEY != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Publish to AUR
-        run: ./scripts/publish-aur.sh ${{ needs.gate.outputs.version }}
+        run: ./scripts/publish-aur.sh ${{ github.ref_name }}
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
