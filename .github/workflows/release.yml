@@ -29,9 +29,99 @@ jobs:
           fi
 
   build:
-    name: Build
+    name: Build (${{ matrix.os }})
     needs: gate
+    if: needs.gate.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libasound2-dev \
+            libgl-dev
+
+      - name: Install Linux AppImage tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y wget
+          sudo wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
+          sudo chmod +x /usr/local/bin/appimagetool
+
+      - name: Install Windows packaging tools
+        if: runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p lexic-gui
+
+      - name: Package Linux assets
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/lexic-linux-x86_64
+          cp target/release/lexic-gui dist/lexic-linux-x86_64/lexic
+          chmod +x dist/lexic-linux-x86_64/lexic
+          cp README.md dist/lexic-linux-x86_64/ 2>/dev/null || true
+          tar -czf dist/lexic-linux-x86_64.tar.gz -C dist lexic-linux-x86_64
+          rm -rf dist/lexic-linux-x86_64
+
+      - name: Package macOS assets
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp target/release/lexic-gui dist/lexic-macos
+          chmod +x dist/lexic-macos
+          (cd dist && zip lexic-macos.zip lexic-macos)
+          rm -f dist/lexic-macos
+
+      - name: Package Windows assets
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path target/release/lexic-gui.exe -DestinationPath dist/lexic-windows.zip
+
+      - name: Build NSIS installer
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y --no-progress
+          ./scripts/build-nsis.sh ${{ needs.gate.outputs.version }}
+          cp dist/lexic-${{ needs.gate.outputs.version }}-windows-installer.exe dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexic-${{ runner.os }}
+          path: dist/*
+
+  release:
+    name: Create GitHub Release
+    needs: [gate, build]
     if: needs.gate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Building version ${{ needs.gate.outputs.version }}"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lexic-*
+          merge-multiple: true
+          path: release-assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          tag_name: v${{ needs.gate.outputs.version }}
+          generate_release_notes: true
