@@ -2,9 +2,10 @@ name: Release
 
 on:
   push:
-    branches: [main]
-  tags:
-    - 'v*.*.*'
+    tags:
+      - 'v*.*.*'
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -13,25 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.check.outputs.version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Check for [release] keyword or tag
+      - name: Check for release trigger
         id: check
         run: |
           # If triggered by tag, always release
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Check commit message for [release] keyword
+          REF_TYPE="${{ github.ref_type }}"
+          REF_NAME="${{ github.ref_name }}"
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          if echo "${COMMIT_MSG}" | grep -q "\[release\]"; then
-            # Extract version from Cargo.toml
+
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "version=${REF_NAME#v}" >> $GITHUB_OUTPUT
+          elif echo "${COMMIT_MSG}" | grep -q "\[release\]"; then
             VERSION=$(grep '^version = ' crates/lexic-gui/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
