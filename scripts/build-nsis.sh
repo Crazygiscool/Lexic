@@ -38,28 +38,28 @@ cat > "${REPO_ROOT}/scripts/lexic.nsi" << EOF
 
 !insertmacro MUI_LANGUAGE "English"
 
-Name "${NAME} ${VERSION}"
-OutFile "${REPO_ROOT}/dist/lexic-${VERSION}-windows-installer.exe"
+Name "\${NAME} \${VERSION}"
+OutFile "\${REPO_ROOT}/dist/lexic-\${VERSION}-windows-installer.exe"
 InstallDir "\$PROGRAMFILES64\\${NAME}"
 ShowInstDetails show
 
 Section "MainSection" SEC01
   SetOutPath "\$INSTDIR"
-  File "/r=1 ${REPO_ROOT}/dist/lexic-windows/*"
-  
+  File "/r=1 \${REPO_ROOT}/dist/lexic-windows/*"
+
   ; Create Start Menu shortcuts
   CreateShortCut "\$SMPROGRAMS\\${NAME}.lnk" "\$INSTDIR\\lexic-gui.exe"
-  
+
   ; Create uninstaller
   WriteUninstaller "\$INSTDIR\\Uninstall.exe"
-  
+
   ; Registry entries
-  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "DisplayName" "${NAME} ${VERSION}"
-  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "Publisher" "${PUBLISHER}"
+  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "DisplayName" "\${NAME} \${VERSION}"
+  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "DisplayVersion" "\${VERSION}"
+  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "Publisher" "\${PUBLISHER}"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "InstallLocation" "\$INSTDIR"
   WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "UninstallString" "\$INSTDIR\\Uninstall.exe"
-  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "URLInfoAbout" "${WEBSITE}"
+  WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}" "URLInfoAbout" "\${WEBSITE}"
 SectionEnd
 
 Section "Uninstall"
@@ -67,7 +67,7 @@ Section "Uninstall"
   Delete "\$INSTDIR\\Uninstall.exe"
   RMDir "\$INSTDIR"
   Delete "\$SMPROGRAMS\\${NAME}.lnk"
-  
+
   DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}"
 SectionEnd
 EOF
