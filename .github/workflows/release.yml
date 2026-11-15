@@ -17,4 +17,5 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - uses: actions/checkout@v4
       - run: echo "Building version ${{ github.ref_name }}"
