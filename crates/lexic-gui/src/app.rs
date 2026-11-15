@@ -10,6 +10,7 @@ use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
 use lexic_dict::{DictionaryClient, LookupResult, normalize};
 use lexic_store::Store;
+use rand::seq::SliceRandom;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -155,6 +156,16 @@ pub struct App {
     pub(crate) home_ticker_offset: f32,
     pub(crate) review: Option<ReviewSession>,
     pub(crate) review_status: Option<String>,
+
+    // Sliding flashcard quiz batch state
+    pub(crate) review_batch: Vec<ReviewCard>,
+    pub(crate) review_batch_index: usize,
+    pub(crate) review_batch_options: Vec<String>,
+    pub(crate) review_batch_selected: Option<usize>,
+    pub(crate) review_batch_revealed: bool,
+    pub(crate) review_batch_correct: bool,
+    pub(crate) review_batch_correct_count: usize,
+    pub(crate) review_batch_total_count: usize,
 
     pub(crate) notes: Vec<Note>,
     pub(crate) note_subjects: Vec<String>,
@@ -308,6 +319,7 @@ pub enum Message {
     CardActionFinished(Result<(), String>),
 
     StartReview,
+    #[allow(dead_code)]
     ReviewStarted(Vec<ReviewCard>),
     RevealAnswer,
     Grade(lexic_core::model::Rating),
@@ -315,6 +327,14 @@ pub enum Message {
     UndoReview,
     UndoFinished(Result<(), String>),
     EndReview,
+
+    // Sliding flashcard quiz batch messages
+    LoadNextBatch,
+    BatchLoaded(Vec<ReviewCard>),
+    SelectAnswer(usize),
+    NextCard,
+    PrevCard,
+    BatchComplete,
 
     LoadNotes,
     NotesLoaded(Vec<Note>),
@@ -456,6 +476,15 @@ impl App {
             home_ticker_offset: 0.0,
             review: None,
             review_status: None,
+
+            review_batch: Vec::new(),
+            review_batch_index: 0,
+            review_batch_options: Vec::new(),
+            review_batch_selected: None,
+            review_batch_revealed: false,
+            review_batch_correct: false,
+            review_batch_correct_count: 0,
+            review_batch_total_count: 0,
 
             notes: Vec::new(),
             note_subjects: Vec::new(),
@@ -1248,17 +1277,26 @@ impl App {
                 }
             }
 
-            Message::StartReview => {
+            Message::StartReview => self.update(Message::LoadNextBatch),
+            Message::LoadNextBatch => {
                 let Some(store) = self.store.clone() else {
                     self.review_status = Some(String::from("Database is not ready"));
                     return Task::none();
                 };
                 self.review_status = None;
                 self.screen = Screen::Review;
+                self.review_batch.clear();
+                self.review_batch_index = 0;
+                self.review_batch_options.clear();
+                self.review_batch_selected = None;
+                self.review_batch_revealed = false;
+                self.review_batch_correct = false;
+                self.review_batch_correct_count = 0;
+                self.review_batch_total_count = 0;
                 Task::perform(
                     async move {
                         let now = now_utc();
-                        let cards = store.list_cards_due(now).unwrap_or_default();
+                        let cards = store.list_cards_due_batch(now, 10).unwrap_or_default();
                         cards
                             .into_iter()
                             .map(|card| {
@@ -1275,7 +1313,7 @@ impl App {
                             })
                             .collect()
                     },
-                    Message::ReviewStarted,
+                    Message::BatchLoaded,
                 )
             }
             Message::ReviewStarted(cards) => {
@@ -1324,6 +1362,83 @@ impl App {
                     session.current = session.queue.pop_front();
                 }
                 self.review_status = Some(String::from("Review session ready"));
+                Task::none()
+            }
+            Message::BatchLoaded(cards) => {
+                if cards.is_empty() {
+                    self.review_status = Some(String::from("No cards due"));
+                    return Task::none();
+                }
+                self.review_batch = cards;
+                self.review_batch_index = 0;
+                self.review_batch_selected = None;
+                self.review_batch_revealed = false;
+                self.review_batch_correct = false;
+                self.review_batch_correct_count = 0;
+                self.review_batch_total_count = 0;
+                self.generate_batch_options();
+                Task::none()
+            }
+            Message::SelectAnswer(answer_index) => {
+                if self.review_batch_revealed || self.review_batch_selected.is_some() {
+                    return Task::none();
+                }
+                let current_card = self.review_batch.get(self.review_batch_index).cloned();
+                let correct_sense = current_card
+                    .as_ref()
+                    .and_then(|c| c.senses.first().cloned())
+                    .map(|s| s.definition)
+                    .unwrap_or_default();
+                let selected_text = self.review_batch_options.get(answer_index).cloned();
+                let is_correct = selected_text.as_deref() == Some(correct_sense.as_str());
+                self.review_batch_selected = Some(answer_index);
+                self.review_batch_correct = is_correct;
+                self.review_batch_revealed = true;
+                self.review_batch_total_count += 1;
+                if is_correct {
+                    self.review_batch_correct_count += 1;
+                }
+                Task::none()
+            }
+            Message::NextCard => {
+                if !self.review_batch_revealed || self.review_batch_selected.is_none() {
+                    return Task::none();
+                }
+                self.review_batch_index += 1;
+                if self.review_batch_index >= self.review_batch.len() {
+                    self.screen = Screen::Review;
+                    self.review_batch_index = 0;
+                    self.review_batch_selected = None;
+                    self.review_batch_revealed = false;
+                    self.review_batch_correct = false;
+                    Task::none()
+                } else {
+                    self.review_batch_selected = None;
+                    self.review_batch_revealed = false;
+                    self.review_batch_correct = false;
+                    self.generate_batch_options();
+                    Task::none()
+                }
+            }
+            Message::PrevCard => {
+                if self.review_batch_index > 0 {
+                    self.review_batch_index -= 1;
+                    self.review_batch_selected = None;
+                    self.review_batch_revealed = false;
+                    self.review_batch_correct = false;
+                    self.generate_batch_options();
+                }
+                Task::none()
+            }
+            Message::BatchComplete => {
+                self.review_batch.clear();
+                self.review_batch_index = 0;
+                self.review_batch_selected = None;
+                self.review_batch_revealed = false;
+                self.review_batch_correct = false;
+                self.review_batch_correct_count = 0;
+                self.review_batch_total_count = 0;
+                self.review_status = Some(String::from("Batch complete!"));
                 Task::none()
             }
             Message::RevealAnswer => {
@@ -2398,6 +2513,31 @@ impl App {
             }
         }
     }
+    fn generate_batch_options(&mut self) {
+        let current_card = self.review_batch.get(self.review_batch_index).cloned();
+        let correct_sense = current_card
+            .as_ref()
+            .and_then(|c| c.senses.first().cloned())
+            .map(|s| s.definition)
+            .unwrap_or_default();
+
+        // Collect all other definitions from cards in the batch
+        let mut all_definitions: Vec<String> = self
+            .review_batch
+            .iter()
+            .filter_map(|c| c.senses.first().map(|s| s.definition.clone()))
+            .filter(|d| *d != correct_sense)
+            .collect();
+        all_definitions.shuffle(&mut rand::thread_rng());
+
+        // Pick 3 distractors (or fewer if not enough)
+        let mut distractors: Vec<String> = all_definitions.into_iter().take(3).collect();
+        distractors.push(correct_sense.clone());
+        distractors.shuffle(&mut rand::thread_rng());
+
+        self.review_batch_options = distractors;
+    }
+
     fn start_lookup(&mut self) -> Task<Message> {
         let word = self.search_input.trim().to_string();
         if word.is_empty() {

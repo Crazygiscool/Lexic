@@ -32,6 +32,7 @@ unicode-normalization = "0.1"
 urlencoding = "2"
 uuid = { version = "1", features = ["v4", "v5", "v7", "serde"] }
 regex = "1"
+rand = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

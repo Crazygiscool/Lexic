@@ -301,6 +301,34 @@ impl Store {
         Ok(cards)
     }
 
+    pub fn list_cards_due_batch(
+        &self,
+        now: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<Card>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT id, entry_id, deck_id, direction, front_note, back_note, state, due_at, interval_days, ease_factor, repetitions, lapses, first_reviewed_at, last_reviewed_at, created_at, updated_at
+             FROM cards
+             WHERE state IN ('new', 'learning', 'relearning', 'review')
+               AND (state = 'new' OR due_at IS NULL OR due_at <= ?1)
+             ORDER BY
+               CASE WHEN state = 'new' THEN 0 ELSE 1 END,
+               due_at IS NULL,
+               due_at,
+               CASE WHEN state = 'new' THEN 0 ELSE ease_factor END ASC,
+               CASE WHEN state = 'new' THEN 0 ELSE lapses END DESC
+             LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![now.timestamp(), limit as i64], map_card_row)?;
+        let mut cards = Vec::new();
+        for row in rows {
+            let card = row?;
+            cards.push(card);
+        }
+        Ok(cards)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn update_card_after_review(
         &self,
@@ -1621,15 +1649,69 @@ fn seed_database(conn: &Connection) -> Result<(), StoreError> {
 
     // === Stock Timeline Events ===
     let stock_events = [
-        ("Fall of the Western Roman Empire", "The traditional date for the fall of Rome, marking the end of antiquity and the beginning of the Middle Ages in Europe.", "476-09-04", None, "History"),
-        ("Magna Carta Signed", "King John of England agrees to the Magna Carta, establishing the principle that everybody, including the king, is subject to the law.", "1215-06-15", None, "History"),
-        ("Christopher Columbus Reaches the Americas", "Columbus lands in the Bahamas, initiating sustained European contact with the Americas.", "1492-10-12", None, "History"),
-        ("Declaration of Independence", "The Thirteen American Colonies declare independence from Great Britain.", "1776-07-04", None, "History"),
-        ("French Revolution Begins", "The Storming of the Bastille marks the start of the French Revolution.", "1789-07-14", None, "History"),
-        ("World War I Ends", "The Armistice of November 11, 1918 ends fighting on the Western Front.", "1918-11-11", None, "History"),
-        ("World War II Ends", "Germany surrenders, ending World War II in Europe (V-E Day).", "1945-05-08", None, "History"),
-        ("First Moon Landing", "Apollo 11 lands on the Moon; Neil Armstrong becomes the first person to walk on the lunar surface.", "1969-07-20", None, "History"),
-        ("Fall of the Berlin Wall", "The Berlin Wall falls, symbolizing the end of the Cold War division of Europe.", "1989-11-09", None, "History"),
+        (
+            "Fall of the Western Roman Empire",
+            "The traditional date for the fall of Rome, marking the end of antiquity and the beginning of the Middle Ages in Europe.",
+            "476-09-04",
+            None,
+            "History",
+        ),
+        (
+            "Magna Carta Signed",
+            "King John of England agrees to the Magna Carta, establishing the principle that everybody, including the king, is subject to the law.",
+            "1215-06-15",
+            None,
+            "History",
+        ),
+        (
+            "Christopher Columbus Reaches the Americas",
+            "Columbus lands in the Bahamas, initiating sustained European contact with the Americas.",
+            "1492-10-12",
+            None,
+            "History",
+        ),
+        (
+            "Declaration of Independence",
+            "The Thirteen American Colonies declare independence from Great Britain.",
+            "1776-07-04",
+            None,
+            "History",
+        ),
+        (
+            "French Revolution Begins",
+            "The Storming of the Bastille marks the start of the French Revolution.",
+            "1789-07-14",
+            None,
+            "History",
+        ),
+        (
+            "World War I Ends",
+            "The Armistice of November 11, 1918 ends fighting on the Western Front.",
+            "1918-11-11",
+            None,
+            "History",
+        ),
+        (
+            "World War II Ends",
+            "Germany surrenders, ending World War II in Europe (V-E Day).",
+            "1945-05-08",
+            None,
+            "History",
+        ),
+        (
+            "First Moon Landing",
+            "Apollo 11 lands on the Moon; Neil Armstrong becomes the first person to walk on the lunar surface.",
+            "1969-07-20",
+            None,
+            "History",
+        ),
+        (
+            "Fall of the Berlin Wall",
+            "The Berlin Wall falls, symbolizing the end of the Cold War division of Europe.",
+            "1989-11-09",
+            None,
+            "History",
+        ),
     ];
 
     for (title, description, start_date, end_date, subject) in stock_events.iter() {
@@ -1668,57 +1750,111 @@ fn seed_database(conn: &Connection) -> Result<(), StoreError> {
             "Subject-Verb Agreement",
             "Grammar",
             "The subject and verb must agree in number. Singular subjects take singular verbs; plural subjects take plural verbs.\n\nExample: 'The cat runs' (singular) vs. 'The cats run' (plural).",
-            vec!["The dog barks loudly.", "The dogs bark loudly.", "She writes every day.", "They write every day."],
-            vec!["The dog bark loudly.", "The dogs barks loudly.", "She write every day.", "They writes every day."],
+            vec![
+                "The dog barks loudly.",
+                "The dogs bark loudly.",
+                "She writes every day.",
+                "They write every day.",
+            ],
+            vec![
+                "The dog bark loudly.",
+                "The dogs barks loudly.",
+                "She write every day.",
+                "They writes every day.",
+            ],
         ),
         (
             "Comma Splice",
             "Punctuation",
             "A comma splice occurs when two independent clauses are joined by only a comma. Use a period, semicolon, or comma + coordinating conjunction instead.\n\nIncorrect: 'I went to the store, I bought milk.'\nCorrect: 'I went to the store. I bought milk.'",
-            vec!["I finished my homework, and then I went to bed.", "She studied hard; she passed the exam."],
-            vec!["I finished my homework, I went to bed.", "She studied hard, she passed the exam."],
+            vec![
+                "I finished my homework, and then I went to bed.",
+                "She studied hard; she passed the exam.",
+            ],
+            vec![
+                "I finished my homework, I went to bed.",
+                "She studied hard, she passed the exam.",
+            ],
         ),
         (
             "Its vs. It's",
             "Spelling",
             "'Its' is possessive (belonging to it). 'It's' is a contraction of 'it is' or 'it has'.\n\nExample: 'The cat licked its paws.' vs. 'It's raining outside.'",
-            vec!["The company changed its policy.", "It's important to study regularly."],
-            vec!["The company changed it's policy.", "Its important to study regularly."],
+            vec![
+                "The company changed its policy.",
+                "It's important to study regularly.",
+            ],
+            vec![
+                "The company changed it's policy.",
+                "Its important to study regularly.",
+            ],
         ),
         (
             "There vs. Their vs. They're",
             "Spelling",
             "'There' indicates location. 'Their' is possessive. 'They're' is a contraction of 'they are'.\n\nExample: 'They're going to their house over there.'",
-            vec!["There is a book on the table.", "Their car is blue.", "They're coming to the party."],
-            vec!["Their is a book on the table.", "There car is blue.", "Theyre coming to the party."],
+            vec![
+                "There is a book on the table.",
+                "Their car is blue.",
+                "They're coming to the party.",
+            ],
+            vec![
+                "Their is a book on the table.",
+                "There car is blue.",
+                "Theyre coming to the party.",
+            ],
         ),
         (
             "Affect vs. Effect",
             "Spelling",
             "'Affect' is usually a verb (to influence). 'Effect' is usually a noun (a result).\n\nExample: 'The weather affected our plans.' vs. 'The effect was immediate.'",
-            vec!["How will this affect your grade?", "The effect was immediate."],
-            vec!["How will this effect your grade?", "The affect was immediate."],
+            vec![
+                "How will this affect your grade?",
+                "The effect was immediate.",
+            ],
+            vec![
+                "How will this effect your grade?",
+                "The affect was immediate.",
+            ],
         ),
         (
             "Semicolon Usage",
             "Punctuation",
             "Use a semicolon to join two closely related independent clauses without a coordinating conjunction, or to separate items in a complex list.\n\nExample: 'I have a big test tomorrow; I can't go out tonight.'",
-            vec!["I love reading; it relaxes me.", "She visited Paris, France; London, England; and Rome, Italy."],
-            vec!["I love reading; it relaxes me.", "She visited Paris France London England and Rome Italy."],
+            vec![
+                "I love reading; it relaxes me.",
+                "She visited Paris, France; London, England; and Rome, Italy.",
+            ],
+            vec![
+                "I love reading; it relaxes me.",
+                "She visited Paris France London England and Rome Italy.",
+            ],
         ),
         (
             "Active vs. Passive Voice",
             "Style",
             "Active voice: the subject performs the action. Passive voice: the subject receives the action. Active voice is generally clearer and more direct.\n\nPassive: 'The ball was thrown by John.'\nActive: 'John threw the ball.'",
-            vec!["The committee approved the proposal.", "Scientists discovered a new species."],
-            vec!["The proposal was approved by the committee.", "A new species was discovered by scientists."],
+            vec![
+                "The committee approved the proposal.",
+                "Scientists discovered a new species.",
+            ],
+            vec![
+                "The proposal was approved by the committee.",
+                "A new species was discovered by scientists.",
+            ],
         ),
         (
             "Dangling Modifiers",
             "Style",
             "A dangling modifier is a word or phrase that modifies a word not clearly stated in the sentence.\n\nIncorrect: 'Walking to school, the bus arrived.'\nCorrect: 'Walking to school, I saw the bus arrive.'",
-            vec!["After finishing the assignment, I went to sleep.", "While studying for the exam, she drank coffee."],
-            vec!["After finishing the assignment, the sleep came.", "While studying for the exam, the coffee was drunk."],
+            vec![
+                "After finishing the assignment, I went to sleep.",
+                "While studying for the exam, she drank coffee.",
+            ],
+            vec![
+                "After finishing the assignment, the sleep came.",
+                "While studying for the exam, the coffee was drunk.",
+            ],
         ),
     ];
 

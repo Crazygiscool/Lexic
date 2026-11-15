@@ -4,7 +4,7 @@ use crate::theme;
 use iced::widget::{
     Space, button, column, container, progress_bar as widget_progress_bar, row, scrollable, text,
 };
-use iced::{Alignment, Color, Element, Length};
+use iced::{Alignment, Element, Length};
 use iced_fonts::lucide::*;
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
@@ -13,11 +13,6 @@ impl App {
     pub fn review_view(&self) -> Element<'_, Message> {
         let due_count: i64 = self.deck_counts.values().map(|(_, _, due)| *due).sum();
         let new_count: i64 = self.deck_counts.values().map(|(_, _, new)| *new).sum();
-        let session_progress = self.review.as_ref().map(|session| {
-            let total = session.cards.len().max(1) as f32;
-            let reviewed = session.reviewed.min(session.cards.len()) as f32;
-            (reviewed, total)
-        });
 
         let header = column![
             row![
@@ -26,9 +21,10 @@ impl App {
                         .size(20)
                         .color(theme::TEXT_PRIMARY)
                         .font(theme::font_code()),
-                    text("Most modern implementations utilize spaced repetition intervals...")
+                    text("Spaced repetition flashcard quiz")
                         .size(12)
-                        .color(theme::TEXT_MUTED),
+                        .color(theme::TEXT_MUTED)
+                        .font(theme::font_code()),
                 ]
                 .spacing(2),
                 Space::new().width(Length::Fill),
@@ -37,7 +33,6 @@ impl App {
                         .size(11)
                         .color(theme::TEXT_MUTED)
                         .font(theme::font_code()),
-                    // deck count
                 ]
                 .spacing(6),
             ]
@@ -53,16 +48,16 @@ impl App {
                         text("SRS Collection")
                             .size(11)
                             .color(theme::ON_PRIMARY_CONTAINER)
-                            .font(theme::font_code())
+                            .font(theme::font_code()),
                     ]
                     .spacing(6)
-                    .align_y(Alignment::Center)
+                    .align_y(Alignment::Center),
                 )
                 .padding([4, 8])
                 .style(theme::panel_flat(
                     theme::PRIMARY_CONTAINER,
                     theme::PRIMARY_CONTAINER,
-                    6.0
+                    6.0,
                 )),
                 Space::new().width(Length::Fill),
                 row![
@@ -80,8 +75,8 @@ impl App {
             10.0,
         ));
 
-        if self.review.is_none() {
-            // start screen
+        // If no active batch, show deck selection / start screen
+        if self.review_batch.is_empty() && self.review.is_none() {
             let mut deck_list = column![].spacing(8);
             for deck in &self.decks {
                 let counts = self.deck_counts.get(&deck.id).copied().unwrap_or((0, 0, 0));
@@ -96,7 +91,7 @@ impl App {
                                 text(
                                     deck.description
                                         .clone()
-                                        .unwrap_or_else(|| String::from("No description"))
+                                        .unwrap_or_else(|| String::from("No description")),
                                 )
                                 .size(11)
                                 .color(theme::TEXT_MUTED),
@@ -106,12 +101,12 @@ impl App {
                             components::chip(
                                 format!("{} total", counts.0),
                                 theme::TEXT_SECONDARY,
-                                theme::BG_CONTAINER_HIGH
+                                theme::BG_CONTAINER_HIGH,
                             ),
                             components::chip(
                                 format!("{} due", counts.2),
                                 theme::TERTIARY,
-                                theme::BG_CONTAINER_HIGH
+                                theme::BG_CONTAINER_HIGH,
                             ),
                         ]
                         .spacing(8)
@@ -156,7 +151,7 @@ impl App {
             )
             .padding([10, 16])
             .style(theme::primary_button())
-            .on_press(Message::StartReview);
+            .on_press(Message::LoadNextBatch);
 
             let mut col = column![deck_header_card, deck_list].spacing(12);
             if let Some(banner) = banner {
@@ -172,109 +167,35 @@ impl App {
                 .into();
         }
 
-        let session = self.review.as_ref().unwrap();
+        // Quiz in progress
+        let batch_len = self.review_batch.len();
+        let current_idx = self.review_batch_index.min(batch_len.saturating_sub(1));
+        let current_card = self.review_batch.get(current_idx);
 
-        if session.current.is_none() {
-            let accuracy = if session.reviewed == 0 {
-                0.0
-            } else {
-                session.correct as f64 / session.reviewed as f64 * 100.0
-            };
-            let summary = container(
-                column![
-                    text("Session complete")
-                        .size(22)
-                        .color(theme::TEXT_PRIMARY)
-                        .font(theme::font_code()),
-                    components::stat_tile("Reviewed", session.reviewed.to_string(), theme::PRIMARY),
-                    components::stat_tile("Accuracy", format!("{accuracy:.0}%"), theme::TERTIARY),
-                    button(text("Done").size(12).font(theme::font_code()))
-                        .padding([8, 16])
-                        .style(theme::primary_button())
-                        .on_press(Message::EndReview),
-                ]
-                .spacing(10),
-            )
-            .padding(18)
-            .style(theme::panel_flat(
-                theme::BG_CONTAINER,
-                theme::BORDER_SUBTLE,
-                10.0,
-            ));
-            let scroll = scrollable(column![header, deck_header_card, summary].spacing(12))
-                .height(Length::Fill);
-            return container(scroll)
-                .padding(16)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
-        let current_index = session.current.unwrap();
-        let review_card = &session.cards[current_index];
-        let now = now_utc();
-        let previews = [
-            lexic_core::model::Rating::Again,
-            lexic_core::model::Rating::Hard,
-            lexic_core::model::Rating::Good,
-            lexic_core::model::Rating::Easy,
-        ]
-        .map(|rating| {
-            let outcome =
-                Sm2::default().grade(&CardSnapshot::from_card(&review_card.card), rating, now);
-            let minutes = (outcome.due_at - now).num_minutes();
-            let interval = if minutes < 60 {
-                format!("{} m", minutes.max(1))
-            } else if minutes < 60 * 24 {
-                format!("{} h", minutes / 60)
-            } else {
-                format!("{} d", (minutes + 60 * 24 - 1) / (60 * 24))
-            };
-            (rating, interval)
-        });
-
-        let front = if let Some(entry) = &review_card.entry {
-            column![
-                text(&entry.word)
-                    .size(40)
-                    .color(theme::TEXT_PRIMARY)
-                    .font(theme::font_code()),
-                entry
-                    .phonetic
-                    .as_ref()
-                    .map(|value| text(value)
-                        .size(16)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code()))
-                    .unwrap_or_else(|| text("").size(1)),
-            ]
-            .spacing(6)
+        // Progress
+        let progress = if batch_len > 0 {
+            (self.review_batch_index as f32) / (batch_len as f32)
         } else {
-            column![text("Unknown word").size(30).color(theme::TEXT_PRIMARY)].spacing(6)
+            0.0
         };
 
-        let (reviewed, total) = session_progress.unwrap_or((0.0, 1.0));
         let progress_panel = container(
             column![
                 row![
-                    text(format!(
-                        "Progress {}/{}",
-                        session.reviewed,
-                        session.cards.len()
-                    ))
-                    .size(11)
-                    .color(theme::TEXT_MUTED)
-                    .font(theme::font_code()),
+                    text(format!("Card {}", current_idx + 1))
+                        .size(11)
+                        .color(theme::TEXT_MUTED)
+                        .font(theme::font_code()),
                     Space::new().width(Length::Fill),
-                    text(format!("EF {:.2}", review_card.card.ease_factor))
+                    text(format!("of {}", batch_len))
                         .size(11)
                         .color(theme::TEXT_MUTED)
                         .font(theme::font_code()),
                 ]
                 .align_y(Alignment::Center),
-                widget_progress_bar(0.0..=total, reviewed).girth(6),
+                widget_progress_bar(0.0..=1.0, progress).girth(6),
             ]
-            .spacing(6),
+            .spacing(8),
         )
         .padding(12)
         .style(theme::panel_flat(
@@ -283,22 +204,270 @@ impl App {
             8.0,
         ));
 
-        let card_container = if session.revealed {
-            let mut back_lines = column![].spacing(8);
-            for sense in &review_card.senses {
-                back_lines = back_lines.push(
+        // Card content
+        let card_content = if let Some(card) = current_card {
+            self.card_front_view(card)
+        } else {
+            // Batch complete
+            let accuracy = if self.review_batch_total_count > 0 {
+                self.review_batch_correct_count as f64 / self.review_batch_total_count as f64
+                    * 100.0
+            } else {
+                0.0
+            };
+            container(
+                column![
+                    text("Batch Complete")
+                        .size(22)
+                        .color(theme::TEXT_PRIMARY)
+                        .font(theme::font_code()),
+                    components::stat_tile(
+                        "Cards",
+                        self.review_batch_total_count.to_string(),
+                        theme::PRIMARY
+                    ),
+                    components::stat_tile(
+                        "Correct",
+                        self.review_batch_correct_count.to_string(),
+                        theme::TERTIARY
+                    ),
+                    components::stat_tile("Accuracy", format!("{accuracy:.0}%"), theme::SECONDARY),
+                    button(text("Start New Batch").size(12).font(theme::font_code()))
+                        .padding([8, 16])
+                        .style(theme::primary_button())
+                        .on_press(Message::LoadNextBatch),
+                ]
+                .spacing(10),
+            )
+            .padding(18)
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER,
+                theme::BORDER_SUBTLE,
+                10.0,
+            ))
+            .into()
+        };
+
+        let content = column![header, deck_header_card, progress_panel, card_content].spacing(12);
+
+        let scroll = scrollable(content).height(Length::Fill);
+        container(scroll)
+            .padding(16)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn card_front_view<'a>(&'a self, card: &'a ReviewCard) -> Element<'a, Message> {
+        let word = card
+            .entry
+            .as_ref()
+            .map(|e| e.word.clone())
+            .unwrap_or_default();
+        let phonetic = card.entry.as_ref().and_then(|e| e.phonetic.clone());
+        let correct_definition = card
+            .senses
+            .first()
+            .map(|s| s.definition.clone())
+            .unwrap_or_default();
+
+        // Word display
+        let word_display = column![
+            text(word)
+                .size(34)
+                .color(theme::TEXT_PRIMARY)
+                .font(theme::font_code()),
+            phonetic.map(|p| {
+                text(p)
+                    .size(16)
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_code())
+            }),
+        ]
+        .spacing(4);
+
+        // Question
+        let question = text("What is the definition?")
+            .size(14)
+            .color(theme::TEXT_SECONDARY)
+            .font(theme::font_code());
+
+        // Answer options
+        let options: Element<'_, Message> = if self.review_batch_revealed {
+            // Show correct answer highlighted
+            let is_correct = self.review_batch_correct;
+            let color = if is_correct {
+                theme::TERTIARY
+            } else {
+                theme::ERROR
+            };
+            let icon = if is_correct {
+                check().size(16)
+            } else {
+                x().size(16)
+            };
+
+            column![
+                row![
+                    icon.color(color),
+                    text(correct_definition)
+                        .size(14)
+                        .color(theme::TEXT_PRIMARY)
+                        .font(theme::font_code()),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+                text(if is_correct { "Correct!" } else { "Incorrect" })
+                    .size(12)
+                    .color(color)
+                    .font(theme::font_code()),
+            ]
+            .spacing(8)
+            .into()
+        } else {
+            let mut buttons = column![].spacing(8);
+            for (idx, option) in self.review_batch_options.iter().enumerate() {
+                let is_selected = self.review_batch_selected == Some(idx);
+                let btn = button(
+                    row![
+                        text(option)
+                            .size(13)
+                            .color(theme::TEXT_PRIMARY)
+                            .font(theme::font_code()),
+                        Space::new().width(Length::Fill),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .padding([10, 14])
+                .width(Length::Fill)
+                .style(theme::button_style(is_selected))
+                .on_press(Message::SelectAnswer(idx));
+                buttons = buttons.push(btn);
+            }
+            buttons.into()
+        };
+
+        // Rating buttons (shown after revealing)
+        let ratings: Element<'_, Message> = if self.review_batch_revealed {
+            let now = now_utc();
+            let card_snapshot = CardSnapshot::from_card(&card.card);
+            let previews = [
+                (lexic_core::model::Rating::Again, theme::ERROR),
+                (lexic_core::model::Rating::Hard, theme::WARNING),
+                (lexic_core::model::Rating::Good, theme::TERTIARY),
+                (lexic_core::model::Rating::Easy, theme::PRIMARY),
+            ];
+
+            let mut rating_buttons: Vec<Element<'_, Message>> = Vec::new();
+            for (rating, color) in previews.iter() {
+                let outcome = Sm2::default().grade(&card_snapshot, *rating, now);
+                let minutes = (outcome.due_at - now).num_minutes();
+                let interval = if minutes < 60 {
+                    format!("{} m", minutes.max(1))
+                } else if minutes < 60 * 24 {
+                    format!("{} h", minutes / 60)
+                } else {
+                    format!("{} d", (minutes + 60 * 24 - 1) / (60 * 24))
+                };
+
+                let btn = button(
+                    column![
+                        text(match rating {
+                            lexic_core::model::Rating::Again => "Again",
+                            lexic_core::model::Rating::Hard => "Hard",
+                            lexic_core::model::Rating::Good => "Good",
+                            lexic_core::model::Rating::Easy => "Easy",
+                        })
+                        .size(12)
+                        .color(*color)
+                        .font(theme::font_code()),
+                        text(interval)
+                            .size(10)
+                            .color(theme::TEXT_MUTED)
+                            .font(theme::font_code()),
+                    ]
+                    .spacing(2)
+                    .align_x(iced::Alignment::Center),
+                )
+                .padding([8, 10])
+                .width(Length::Fill)
+                .style(theme::secondary_button())
+                .on_press(Message::Grade(*rating));
+                rating_buttons.push(btn.into());
+            }
+            let mut rating_row = row![].spacing(8);
+            for btn in rating_buttons {
+                rating_row = rating_row.push(btn);
+            }
+            rating_row.into()
+        } else {
+            text("").into()
+        };
+
+        // Navigation buttons
+        let mut nav_items: Vec<Element<'_, Message>> = Vec::new();
+        if self.review_batch_index > 0 {
+            nav_items.push(
+                button(
+                    row![
+                        rotate_ccw().size(13).color(theme::ON_PRIMARY_CONTAINER),
+                        text("Previous")
+                            .size(11)
+                            .color(theme::ON_PRIMARY_CONTAINER)
+                            .font(theme::font_code()),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::primary_button())
+                .on_press(Message::PrevCard)
+                .into(),
+            );
+        }
+        nav_items.push(Space::new().width(Length::Fill).into());
+        nav_items.push(
+            button(
+                row![
+                    text("Next Card")
+                        .size(11)
+                        .color(theme::ON_PRIMARY_CONTAINER)
+                        .font(theme::font_code()),
+                    chevron_right().size(13).color(theme::ON_PRIMARY_CONTAINER),
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            )
+            .padding([8, 14])
+            .style(theme::primary_button())
+            .on_press(Message::NextCard)
+            .into(),
+        );
+        let mut nav = row![].spacing(8);
+        for item in nav_items {
+            nav = nav.push(item);
+        }
+        let nav = nav;
+
+        // Senses detail (shown after revealing)
+        let senses_detail = if self.review_batch_revealed && !card.senses.is_empty() {
+            let mut senses_lines: Vec<Element<'_, Message>> = Vec::new();
+            for sense in &card.senses {
+                senses_lines.push(
                     container(
                         column![
                             text(sense.part_of_speech.clone().unwrap_or_default())
                                 .size(10)
                                 .color(theme::PRIMARY)
                                 .font(theme::font_code()),
-                            text(&sense.definition).size(15).color(theme::TEXT_PRIMARY),
-                            sense
-                                .example
-                                .as_ref()
-                                .map(|example| text(example).size(12).color(theme::TEXT_MUTED))
-                                .unwrap_or_else(|| text("").size(1)),
+                            text(&sense.definition).size(14).color(theme::TEXT_PRIMARY),
+                            sense.example.as_ref().map(|example| {
+                                text(format!("\"{example}\""))
+                                    .size(12)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code())
+                            }),
                         ]
                         .spacing(4),
                     )
@@ -307,148 +476,39 @@ impl App {
                         theme::BG_CONTAINER,
                         theme::BORDER_SUBTLE,
                         8.0,
-                    )),
+                    ))
+                    .into(),
                 );
             }
-            if review_card.senses.is_empty() {
-                back_lines = back_lines.push(
-                    text("No definitions available")
-                        .size(12)
-                        .color(theme::TEXT_MUTED),
-                );
-            }
-
-            let ratings = container(
-                row![
-                    rating_button(
-                        "Again",
-                        theme::ERROR,
-                        previews[0].1.clone(),
-                        Message::Grade(previews[0].0)
-                    ),
-                    rating_button(
-                        "Hard",
-                        theme::WARNING,
-                        previews[1].1.clone(),
-                        Message::Grade(previews[1].0)
-                    ),
-                    rating_button(
-                        "Good",
-                        theme::TERTIARY,
-                        previews[2].1.clone(),
-                        Message::Grade(previews[2].0)
-                    ),
-                    rating_button(
-                        "Easy",
-                        theme::PRIMARY,
-                        previews[3].1.clone(),
-                        Message::Grade(previews[3].0)
-                    ),
-                ]
-                .spacing(8),
-            )
-            .width(Length::Fill);
-
-            let undo_row = row![
-                button(
-                    row![
-                        rotate_ccw().size(13).color(theme::TEXT_MUTED),
-                        text("Undo")
-                            .size(11)
-                            .color(theme::TEXT_MUTED)
-                            .font(theme::font_code())
-                    ]
-                    .spacing(6)
-                    .align_y(Alignment::Center)
-                )
-                .padding([6, 10])
-                .style(theme::ghost_button())
-                .on_press(Message::UndoReview),
-                Space::new().width(Length::Fill),
-                button(text("End session").size(11).font(theme::font_code()))
-                    .padding([6, 10])
-                    .style(theme::ghost_button())
-                    .on_press(Message::EndReview),
+            let mut senses_column = column![
+                text("Definitions")
+                    .size(12)
+                    .color(theme::TEXT_MUTED)
+                    .font(theme::font_code()),
             ]
-            .align_y(Alignment::Center);
-
-            container(
-                column![front, back_lines, ratings, undo_row]
-                    .spacing(16)
-                    .width(Length::Fill),
-            )
-            .padding(18)
-            .style(theme::panel_flat(
-                theme::BG_CONTAINER_LOW,
-                theme::BORDER_SUBTLE,
-                10.0,
-            ))
+            .spacing(6);
+            for line in senses_lines {
+                senses_column = senses_column.push(line);
+            }
+            let senses_column: Element<'_, Message> = senses_column.into();
+            senses_column
         } else {
-            container(
-                column![
-                    front,
-                    button(
-                        row![
-                            eye().size(13).color(theme::ON_PRIMARY_CONTAINER),
-                            text("Show answer")
-                                .size(12)
-                                .color(theme::ON_PRIMARY_CONTAINER)
-                                .font(theme::font_code())
-                        ]
-                        .spacing(6)
-                        .align_y(Alignment::Center)
-                    )
-                    .padding([10, 16])
-                    .style(theme::primary_button())
-                    .on_press(Message::RevealAnswer),
-                    text("Press Space to reveal")
-                        .size(11)
-                        .color(theme::TEXT_MUTED)
-                        .font(theme::font_code()),
-                ]
-                .spacing(16)
-                .width(Length::Fill),
-            )
-            .padding(18)
-            .style(theme::panel_flat(
-                theme::BG_CONTAINER_LOW,
-                theme::BORDER_SUBTLE,
-                10.0,
-            ))
+            text("").into()
         };
 
-        let scroll = scrollable(
-            column![header, deck_header_card, progress_panel, card_container].spacing(12),
-        )
-        .height(Length::Fill);
-        container(scroll)
-            .padding(16)
-            .width(Length::Fill)
-            .height(Length::Fill)
+        let middle: Element<'_, Message> = if self.review_batch_revealed {
+            column![senses_detail, ratings].spacing(12).into()
+        } else {
+            text("").into()
+        };
+
+        container(column![word_display, question, options, middle, nav].spacing(16))
+            .padding(18)
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER_LOW,
+                theme::BORDER_SUBTLE,
+                10.0,
+            ))
             .into()
     }
-}
-
-fn rating_button(
-    label: &'static str,
-    color: Color,
-    interval: String,
-    message: Message,
-) -> Element<'static, Message> {
-    button(
-        column![
-            text(label).size(12).color(color).font(theme::font_code()),
-            text(interval)
-                .size(10)
-                .color(theme::TEXT_MUTED)
-                .font(theme::font_code()),
-        ]
-        .spacing(2)
-        .align_x(iced::Alignment::Center),
-    )
-    .padding([8, 10])
-    .width(Length::Fill)
-    .style(theme::secondary_button())
-    .on_press(message)
-    .into()
 }
