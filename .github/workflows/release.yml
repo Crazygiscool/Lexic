@@ -3,9 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Hello from release workflow"
+      - run: echo "Building version ${{ github.ref_name }}"
