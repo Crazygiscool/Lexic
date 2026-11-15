@@ -9,7 +9,11 @@ on:
 
 jobs:
   build:
-    name: Build
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - run: echo "Building version ${{ github.ref_name }}"
