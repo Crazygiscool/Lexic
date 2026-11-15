@@ -5,7 +5,7 @@ use iced::widget::text_editor;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
 use iced_fonts::lucide::*;
-use lexic_core::model::Note;
+use lexic_core::model::{Id, Note};
 
 impl App {
     pub fn notes_view(&self) -> Element<'_, Message> {
@@ -39,20 +39,37 @@ impl App {
             ]
             .spacing(4),
             Space::new().width(Length::Fill),
-            button(
-                row![
-                    plus().size(13).color(theme::ON_PRIMARY_CONTAINER),
-                    text("New Note")
-                        .size(11)
-                        .color(theme::ON_PRIMARY_CONTAINER)
-                        .font(theme::font_code()),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center),
-            )
-            .padding([8, 14])
-            .style(theme::primary_button())
-            .on_press(Message::NewNote),
+            row![
+                button(
+                    row![
+                        network().size(13).color(theme::ON_PRIMARY_CONTAINER),
+                        text("Graph")
+                            .size(11)
+                            .color(theme::ON_PRIMARY_CONTAINER)
+                            .font(theme::font_code()),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::secondary_button())
+                .on_press(Message::OpenNoteGraph),
+                button(
+                    row![
+                        plus().size(13).color(theme::ON_PRIMARY_CONTAINER),
+                        text("New Note")
+                            .size(11)
+                            .color(theme::ON_PRIMARY_CONTAINER)
+                            .font(theme::font_code()),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::primary_button())
+                .on_press(Message::NewNote),
+            ]
+            .spacing(8),
         ]
         .spacing(12)
         .align_y(Alignment::Center);
@@ -267,7 +284,175 @@ impl App {
             text("").size(1)
         };
 
-        let content = column![header, meta_row, title_input, status_text, editor].spacing(10);
+        // Links panels (owned data to satisfy borrow checker)
+        let links_panel: Element<'_, Message> = if let Some(note) = &self.active_note {
+            let note_id = note.id;
+            let store = self.store.as_ref();
+            let outgoing = store
+                .and_then(|s| s.get_outgoing_links(note_id).ok())
+                .unwrap_or_default();
+            let incoming = store
+                .and_then(|s| s.get_incoming_links(note_id).ok())
+                .unwrap_or_default();
+
+            // Clone owned data for button closures
+            let outgoing_items: Vec<(String, Id)> = outgoing
+                .into_iter()
+                .map(|(_link, target)| (target.title.clone(), target.id))
+                .collect();
+            let incoming_items: Vec<(String, Id)> = incoming
+                .into_iter()
+                .map(|(_link, source)| (source.title.clone(), source.id))
+                .collect();
+
+            let outgoing_list: Element<'_, Message> = if outgoing_items.is_empty() {
+                text("No outgoing links")
+                    .size(11)
+                    .color(theme::TEXT_MUTED)
+                    .into()
+            } else {
+                let mut list: iced::widget::Column<'_, Message> = column![].spacing(4);
+                for (title, id) in &outgoing_items {
+                    let title = title.clone();
+                    let id = *id;
+                    list = list.push(
+                        button(
+                            row![
+                                text(title)
+                                    .size(12)
+                                    .color(theme::TEXT_PRIMARY)
+                                    .font(theme::font_code()),
+                                Space::new().width(Length::Fill),
+                                text("→")
+                                    .size(12)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code()),
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        )
+                        .padding([6, 10])
+                        .style(theme::ghost_button())
+                        .on_press(Message::OpenNoteGraphCentered(id)),
+                    );
+                }
+                container(list).into()
+            };
+
+            let incoming_list: Element<'_, Message> = if incoming_items.is_empty() {
+                text("No incoming links")
+                    .size(11)
+                    .color(theme::TEXT_MUTED)
+                    .into()
+            } else {
+                let mut list: iced::widget::Column<'_, Message> = column![].spacing(4);
+                for (title, id) in &incoming_items {
+                    let title = title.clone();
+                    let id = *id;
+                    list = list.push(
+                        button(
+                            row![
+                                text(title)
+                                    .size(12)
+                                    .color(theme::TEXT_PRIMARY)
+                                    .font(theme::font_code()),
+                                Space::new().width(Length::Fill),
+                                text("←")
+                                    .size(12)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code()),
+                            ]
+                            .spacing(8)
+                            .align_y(Alignment::Center),
+                        )
+                        .padding([6, 10])
+                        .style(theme::ghost_button())
+                        .on_press(Message::OpenNoteGraphCentered(id)),
+                    );
+                }
+                container(list).into()
+            };
+
+            container(
+                column![
+                    text("Links")
+                        .size(14)
+                        .color(theme::TEXT_PRIMARY)
+                        .font(theme::font_code()),
+                    row![
+                        container(
+                            column![
+                                text("Outgoing")
+                                    .size(11)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code()),
+                                outgoing_list,
+                            ]
+                            .spacing(6),
+                        )
+                        .padding(10)
+                        .width(Length::FillPortion(1))
+                        .style(theme::panel_flat(
+                            theme::BG_CONTAINER,
+                            theme::BORDER_SUBTLE,
+                            8.0
+                        )),
+                        container(
+                            column![
+                                text("Incoming")
+                                    .size(11)
+                                    .color(theme::TEXT_MUTED)
+                                    .font(theme::font_code()),
+                                incoming_list,
+                            ]
+                            .spacing(6),
+                        )
+                        .padding(10)
+                        .width(Length::FillPortion(1))
+                        .style(theme::panel_flat(
+                            theme::BG_CONTAINER,
+                            theme::BORDER_SUBTLE,
+                            8.0
+                        )),
+                    ]
+                    .spacing(10),
+                    button(
+                        row![
+                            network().size(13).color(theme::ON_PRIMARY_CONTAINER),
+                            text("View Graph")
+                                .size(11)
+                                .color(theme::ON_PRIMARY_CONTAINER)
+                                .font(theme::font_code()),
+                        ]
+                        .spacing(6)
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([8, 14])
+                    .style(theme::secondary_button())
+                    .on_press(Message::OpenNoteGraphCentered(note_id)),
+                ]
+                .spacing(10),
+            )
+            .padding(12)
+            .style(theme::panel_flat(
+                theme::BG_CONTAINER_LOW,
+                theme::BORDER_SUBTLE,
+                10.0,
+            ))
+            .into()
+        } else {
+            container(text("").size(1)).into()
+        };
+
+        let content = column![
+            header,
+            meta_row,
+            title_input,
+            status_text,
+            editor,
+            links_panel
+        ]
+        .spacing(10);
 
         let scroll = scrollable(content).height(Length::Fill);
         container(scroll)

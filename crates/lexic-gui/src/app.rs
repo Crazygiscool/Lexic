@@ -88,6 +88,7 @@ pub enum Screen {
     Settings,
     Notes,
     NoteDetail(lexic_core::model::Id),
+    NoteGraph(Option<lexic_core::model::Id>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -291,6 +292,8 @@ pub enum Message {
     CancelNoteEdit,
     NoteEditorAction(iced::widget::text_editor::Action),
     NoteOpened(Option<Note>),
+    OpenNoteGraph,
+    OpenNoteGraphCentered(lexic_core::model::Id),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -547,6 +550,9 @@ impl App {
                 }
                 if screen == Screen::Notes {
                     return self.update(Message::LoadNotes);
+                }
+                if let Screen::NoteGraph(_) = screen {
+                    return Task::none();
                 }
                 Task::none()
             }
@@ -1497,6 +1503,8 @@ impl App {
                         .unwrap_or(now),
                     updated_at: now,
                 };
+                let note_content = note.content.clone();
+                let note_id = note.id;
                 Task::perform(
                     async move {
                         if note.id == Id::nil() {
@@ -1510,6 +1518,9 @@ impl App {
                                 .update_note(&note)
                                 .map_err(|error| error.to_string())?;
                         }
+                        store
+                            .parse_and_create_links(note_id, &note_content)
+                            .map_err(|error| error.to_string())?;
                         Ok(())
                     },
                     Message::NoteSaved,
@@ -1562,6 +1573,14 @@ impl App {
                 self.note_editor_tags = String::new();
                 self.note_editor_status = None;
                 self.screen = Screen::Notes;
+                Task::none()
+            }
+            Message::OpenNoteGraph => {
+                self.screen = Screen::NoteGraph(None);
+                Task::none()
+            }
+            Message::OpenNoteGraphCentered(note_id) => {
+                self.screen = Screen::NoteGraph(Some(note_id));
                 Task::none()
             }
             Message::NoteEditorAction(action) => {

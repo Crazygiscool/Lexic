@@ -1,8 +1,11 @@
+#![allow(clippy::collapsible_if)]
+
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
 use lexic_core::model::*;
+use regex::Regex;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::StoreError;
@@ -1092,6 +1095,166 @@ impl Store {
             params![id.to_string()],
         )?;
         Ok(())
+    }
+
+    // === Link management ===
+
+    pub fn find_note_by_title(&self, title: &str) -> Result<Option<Note>, StoreError> {
+        let conn = self.lock()?;
+        let result = conn
+            .query_row(
+                "SELECT id, title, content, subject, tags, source_url, created_at, updated_at
+             FROM notes WHERE title = ?1 LIMIT 1",
+                params![title],
+                map_note_row,
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn parse_and_create_links(&self, note_id: Id, content: &str) -> Result<(), StoreError> {
+        // Delete existing outgoing links from this note first
+        self.delete_links_for_source(note_id)?;
+
+        // Find all [[Title]] patterns
+        let re =
+            Regex::new(r"\[\[([^\]]+)\]\]").map_err(|e| StoreError::Internal(e.to_string()))?;
+        let mut conn = self.lock()?;
+        let tx = conn.transaction()?;
+
+        for cap in re.captures_iter(content) {
+            let link_title = cap
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let link_title = link_title.trim();
+            if link_title.is_empty() {
+                continue;
+            }
+
+            // Look up target note by title
+            if let Some(target) = tx
+                .query_row(
+                    "SELECT id, title, content, subject, tags, source_url, created_at, updated_at
+                 FROM notes WHERE title = ?1 LIMIT 1",
+                    params![link_title],
+                    map_note_row,
+                )
+                .optional()?
+            {
+                if target.id != note_id {
+                    let link = NoteLink {
+                        id: unused_uuid(),
+                        source_note_id: note_id,
+                        target_note_id: target.id,
+                        link_type: String::from("wiki"),
+                    };
+                    tx.execute(
+                        "INSERT OR IGNORE INTO note_links (id, source_note_id, target_note_id, link_type)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            link.id.to_string(),
+                            link.source_note_id.to_string(),
+                            link.target_note_id.to_string(),
+                            link.link_type,
+                        ],
+                    )?;
+                }
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_outgoing_links(&self, note_id: Id) -> Result<Vec<(NoteLink, Note)>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT nl.id, nl.source_note_id, nl.target_note_id, nl.link_type,
+                    n2.id, n2.title, n2.content, n2.subject, n2.tags, n2.source_url, n2.created_at, n2.updated_at
+             FROM note_links nl
+             JOIN notes n2 ON n2.id = nl.target_note_id
+             WHERE nl.source_note_id = ?1",
+        )?;
+        let rows = statement.query_map(params![note_id.to_string()], |row| {
+            let link = NoteLink {
+                id: row.get::<_, String>(0)?.parse().unwrap(),
+                source_note_id: row.get::<_, String>(1)?.parse().unwrap(),
+                target_note_id: row.get::<_, String>(2)?.parse().unwrap(),
+                link_type: row.get(3)?,
+            };
+            let target = Note {
+                id: row.get::<_, String>(4)?.parse().unwrap(),
+                title: row.get(5)?,
+                content: row.get(6)?,
+                subject: row.get(7)?,
+                tags: serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default(),
+                source_url: row.get(9)?,
+                created_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap_or_else(Utc::now),
+                updated_at: DateTime::from_timestamp(row.get(11)?, 0).unwrap_or_else(Utc::now),
+            };
+            Ok((link, target))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_incoming_links(&self, note_id: Id) -> Result<Vec<(NoteLink, Note)>, StoreError> {
+        let conn = self.lock()?;
+        let mut statement = conn.prepare(
+            "SELECT nl.id, nl.source_note_id, nl.target_note_id, nl.link_type,
+                    n2.id, n2.title, n2.content, n2.subject, n2.tags, n2.source_url, n2.created_at, n2.updated_at
+             FROM note_links nl
+             JOIN notes n2 ON n2.id = nl.source_note_id
+             WHERE nl.target_note_id = ?1",
+        )?;
+        let rows = statement.query_map(params![note_id.to_string()], |row| {
+            let link = NoteLink {
+                id: row.get::<_, String>(0)?.parse().unwrap(),
+                source_note_id: row.get::<_, String>(1)?.parse().unwrap(),
+                target_note_id: row.get::<_, String>(2)?.parse().unwrap(),
+                link_type: row.get(3)?,
+            };
+            let source = Note {
+                id: row.get::<_, String>(4)?.parse().unwrap(),
+                title: row.get(5)?,
+                content: row.get(6)?,
+                subject: row.get(7)?,
+                tags: serde_json::from_str(&row.get::<_, String>(8)?).unwrap_or_default(),
+                source_url: row.get(9)?,
+                created_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap_or_else(Utc::now),
+                updated_at: DateTime::from_timestamp(row.get(11)?, 0).unwrap_or_else(Utc::now),
+            };
+            Ok((link, source))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn delete_links_for_source(&self, note_id: Id) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM note_links WHERE source_note_id = ?1",
+            params![note_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn all_notes_for_graph(&self) -> Result<Vec<(Note, Vec<Id>)>, StoreError> {
+        let notes = self.list_notes(None, None)?;
+        let mut result = Vec::new();
+        for note in &notes {
+            let links = self.get_outgoing_links(note.id)?;
+            let targets: Vec<Id> = links.into_iter().map(|(_, target)| target.id).collect();
+            result.push((note.clone(), targets));
+        }
+        Ok(result)
     }
 }
 

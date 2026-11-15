@@ -288,6 +288,7 @@ impl App {
             Screen::Home => self.home_view(),
             Screen::Notes => self.notes_view(),
             Screen::NoteDetail(_) => self.note_detail_view(),
+            Screen::NoteGraph(_) => self.notes_graph_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),

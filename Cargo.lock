@@ -2371,6 +2371,7 @@ dependencies = [
  "directories",
  "fs2",
  "lexic-core",
+ "regex",
  "rusqlite",
  "rusqlite_migration",
  "serde",
