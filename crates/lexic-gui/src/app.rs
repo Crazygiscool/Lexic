@@ -3,7 +3,7 @@
 #![allow(clippy::single_match)]
 #![allow(dead_code)]
 
-use lexic_core::model::{Card, Deck, Entry, Id, Note, Sense, TimelineEvent};
+use lexic_core::model::{Card, Deck, Entry, GrammarRule, Id, Note, Sense, TimelineEvent};
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
 use lexic_dict::{DictionaryClient, LookupResult, normalize};
@@ -91,6 +91,8 @@ pub enum Screen {
     NoteGraph(Option<lexic_core::model::Id>),
     Timeline,
     TimelineDetail(lexic_core::model::Id),
+    GrammarRules,
+    GrammarRuleDetail(lexic_core::model::Id),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -174,6 +176,18 @@ pub struct App {
     pub(crate) timeline_editor_note_id: Option<lexic_core::model::Id>,
     pub(crate) timeline_editor_status: Option<String>,
     pub(crate) timeline_selected_id: Option<lexic_core::model::Id>,
+
+    pub(crate) grammar_rules: Vec<GrammarRule>,
+    pub(crate) grammar_categories: Vec<String>,
+    pub(crate) grammar_category_filter: Option<String>,
+    pub(crate) active_grammar_rule: Option<GrammarRule>,
+    pub(crate) grammar_editor_title: String,
+    pub(crate) grammar_editor_category: String,
+    pub(crate) grammar_editor_explanation: String,
+    pub(crate) grammar_editor_examples: String,
+    pub(crate) grammar_editor_counter_examples: String,
+    pub(crate) grammar_editor_status: Option<String>,
+    pub(crate) grammar_selected_id: Option<lexic_core::model::Id>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -328,6 +342,24 @@ pub enum Message {
     DeleteTimelineEvent(lexic_core::model::Id),
     TimelineEventDeleted(Result<(), String>),
     CancelTimelineEdit,
+
+    LoadGrammarRules,
+    GrammarRulesLoaded(Vec<GrammarRule>),
+    GrammarCategoriesLoaded(Vec<String>),
+    GrammarRuleSelected(lexic_core::model::Id),
+    GrammarCategoryFilterChanged(Option<String>),
+    NewGrammarRule,
+    GrammarRuleTitleChanged(String),
+    GrammarRuleCategoryChanged(String),
+    GrammarRuleExplanationChanged(String),
+    GrammarRuleExamplesChanged(String),
+    GrammarRuleCounterExamplesChanged(String),
+    SaveGrammarRule,
+    GrammarRuleSaved(Result<(), String>),
+    DeleteGrammarRule(lexic_core::model::Id),
+    GrammarRuleDeleted(Result<(), String>),
+    CancelGrammarRuleEdit,
+    GrammarRuleOpened(Option<GrammarRule>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -417,6 +449,18 @@ impl App {
             timeline_editor_note_id: None,
             timeline_editor_status: None,
             timeline_selected_id: None,
+
+            grammar_rules: Vec::new(),
+            grammar_categories: Vec::new(),
+            grammar_category_filter: None,
+            active_grammar_rule: None,
+            grammar_editor_title: String::new(),
+            grammar_editor_category: String::from("Grammar"),
+            grammar_editor_explanation: String::new(),
+            grammar_editor_examples: String::new(),
+            grammar_editor_counter_examples: String::new(),
+            grammar_editor_status: None,
+            grammar_selected_id: None,
         };
         let task = if let Some(store) = app.store.clone() {
             let store_for_stats = store.clone();
@@ -604,6 +648,9 @@ impl App {
                 if screen == Screen::Timeline {
                     return self.update(Message::LoadTimeline);
                 }
+                if screen == Screen::GrammarRules {
+                    return self.update(Message::LoadGrammarRules);
+                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -628,6 +675,9 @@ impl App {
                                 "4" => return self.update(Message::Navigate(Screen::Settings)),
                                 "5" => return self.update(Message::Navigate(Screen::Notes)),
                                 "6" => return self.update(Message::Navigate(Screen::Timeline)),
+                                "7" => return self.update(Message::Navigate(Screen::GrammarRules)),
+                                "8" => return self.update(Message::Navigate(Screen::Search)),
+                                "9" => return self.update(Message::Navigate(Screen::Settings)),
                                 _ => {}
                             },
                             _ => {}
@@ -1864,6 +1914,219 @@ impl App {
                 self.timeline_editor_note_id = None;
                 self.timeline_editor_status = None;
                 self.screen = Screen::Timeline;
+                Task::none()
+            }
+
+            // === Grammar Rules ===
+            Message::LoadGrammarRules => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                let category_filter = self.grammar_category_filter.clone();
+                let store_for_categories = store.clone();
+                Task::batch([
+                    Task::perform(
+                        async move {
+                            store
+                                .list_grammar_rules(category_filter.as_deref())
+                                .unwrap_or_default()
+                        },
+                        Message::GrammarRulesLoaded,
+                    ),
+                    Task::perform(
+                        async move {
+                            store_for_categories
+                                .list_grammar_categories()
+                                .unwrap_or_default()
+                        },
+                        Message::GrammarCategoriesLoaded,
+                    ),
+                ])
+            }
+            Message::GrammarRulesLoaded(rules) => {
+                self.grammar_rules = rules;
+                Task::none()
+            }
+            Message::GrammarCategoriesLoaded(categories) => {
+                self.grammar_categories = categories;
+                Task::none()
+            }
+            Message::GrammarRuleSelected(rule_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                self.grammar_selected_id = Some(rule_id);
+                self.screen = Screen::GrammarRuleDetail(rule_id);
+                Task::perform(
+                    async move { store.get_grammar_rule(rule_id).unwrap_or_default() },
+                    Message::GrammarRuleOpened,
+                )
+            }
+            Message::GrammarRuleOpened(rule) => {
+                self.active_grammar_rule = rule;
+                if let Some(rule) = &self.active_grammar_rule {
+                    self.grammar_editor_title = rule.title.clone();
+                    self.grammar_editor_category = rule.category.clone();
+                    self.grammar_editor_explanation = rule.explanation.clone();
+                    self.grammar_editor_examples = rule.examples.join("\n");
+                    self.grammar_editor_counter_examples = rule.counter_examples.join("\n");
+                }
+                Task::none()
+            }
+            Message::GrammarCategoryFilterChanged(category) => {
+                self.grammar_category_filter = category;
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                let filter = self.grammar_category_filter.clone();
+                Task::perform(
+                    async move {
+                        store
+                            .list_grammar_rules(filter.as_deref())
+                            .unwrap_or_default()
+                    },
+                    Message::GrammarRulesLoaded,
+                )
+            }
+            Message::NewGrammarRule => {
+                self.active_grammar_rule = None;
+                self.grammar_selected_id = None;
+                self.grammar_editor_title = String::new();
+                self.grammar_editor_category = String::from("Grammar");
+                self.grammar_editor_explanation = String::new();
+                self.grammar_editor_examples = String::new();
+                self.grammar_editor_counter_examples = String::new();
+                self.grammar_editor_status = None;
+                self.screen = Screen::GrammarRuleDetail(lexic_core::model::Id::nil());
+                Task::none()
+            }
+            Message::GrammarRuleTitleChanged(value) => {
+                self.grammar_editor_title = value;
+                Task::none()
+            }
+            Message::GrammarRuleCategoryChanged(value) => {
+                self.grammar_editor_category = value;
+                Task::none()
+            }
+            Message::GrammarRuleExplanationChanged(value) => {
+                self.grammar_editor_explanation = value;
+                Task::none()
+            }
+            Message::GrammarRuleExamplesChanged(value) => {
+                self.grammar_editor_examples = value;
+                Task::none()
+            }
+            Message::GrammarRuleCounterExamplesChanged(value) => {
+                self.grammar_editor_counter_examples = value;
+                Task::none()
+            }
+            Message::SaveGrammarRule => {
+                let Some(store) = self.store.clone() else {
+                    self.grammar_editor_status = Some(String::from("Database is not ready"));
+                    return Task::none();
+                };
+                let title = self.grammar_editor_title.trim().to_string();
+                if title.is_empty() {
+                    self.grammar_editor_status = Some(String::from("Title cannot be empty"));
+                    return Task::none();
+                }
+                let now = now_utc();
+                let examples: Vec<String> = self
+                    .grammar_editor_examples
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                let counter_examples: Vec<String> = self
+                    .grammar_editor_counter_examples
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                let rule = GrammarRule {
+                    id: self
+                        .active_grammar_rule
+                        .as_ref()
+                        .map(|r| r.id)
+                        .unwrap_or_else(lexic_core::model::Id::nil),
+                    title,
+                    category: self.grammar_editor_category.clone(),
+                    explanation: self.grammar_editor_explanation.clone(),
+                    examples,
+                    counter_examples,
+                    created_at: self
+                        .active_grammar_rule
+                        .as_ref()
+                        .map(|r| r.created_at)
+                        .unwrap_or(now),
+                    updated_at: now,
+                };
+                Task::perform(
+                    async move {
+                        if rule.id == Id::nil() {
+                            let new_id = Uuid::new_v4();
+                            let rule_with_id = GrammarRule { id: new_id, ..rule };
+                            store
+                                .create_grammar_rule(&rule_with_id)
+                                .map_err(|error| error.to_string())?;
+                        } else {
+                            store
+                                .update_grammar_rule(&rule)
+                                .map_err(|error| error.to_string())?;
+                        }
+                        Ok(())
+                    },
+                    Message::GrammarRuleSaved,
+                )
+            }
+            Message::GrammarRuleSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        self.grammar_editor_status = Some(String::from("Grammar rule saved"));
+                        let _ = self.update(Message::LoadGrammarRules);
+                        self.screen = Screen::GrammarRules;
+                    }
+                    Err(error) => self.grammar_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::DeleteGrammarRule(rule_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .delete_grammar_rule(rule_id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    Message::GrammarRuleDeleted,
+                )
+            }
+            Message::GrammarRuleDeleted(result) => {
+                match result {
+                    Ok(()) => {
+                        self.active_grammar_rule = None;
+                        self.grammar_selected_id = None;
+                        self.grammar_editor_status = Some(String::from("Grammar rule deleted"));
+                        let _ = self.update(Message::LoadGrammarRules);
+                        self.screen = Screen::GrammarRules;
+                    }
+                    Err(error) => self.grammar_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::CancelGrammarRuleEdit => {
+                self.active_grammar_rule = None;
+                self.grammar_selected_id = None;
+                self.grammar_editor_title = String::new();
+                self.grammar_editor_category = String::from("Grammar");
+                self.grammar_editor_explanation = String::new();
+                self.grammar_editor_examples = String::new();
+                self.grammar_editor_counter_examples = String::new();
+                self.grammar_editor_status = None;
+                self.screen = Screen::GrammarRules;
                 Task::none()
             }
         }

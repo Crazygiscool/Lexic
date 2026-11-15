@@ -133,6 +133,14 @@ impl App {
             ),
             nav_link(
                 self,
+                Screen::GrammarRules,
+                r#type(),
+                "Grammar Rules",
+                "\u{2325}7",
+                None
+            ),
+            nav_link(
+                self,
                 Screen::Review,
                 library(),
                 "Review Deck",
@@ -144,7 +152,7 @@ impl App {
                 Screen::Search,
                 book_open(),
                 "Grammar Dict",
-                "\u{2325}7",
+                "\u{2325}8",
                 None
             ),
             nav_link(
@@ -152,7 +160,7 @@ impl App {
                 Screen::Settings,
                 settings(),
                 "Engine & Interop",
-                "\u{2325}8",
+                "\u{2325}9",
                 None
             ),
         ]
@@ -299,6 +307,8 @@ impl App {
             Screen::NoteGraph(_) => self.notes_graph_view(),
             Screen::Timeline => self.timeline_view(),
             Screen::TimelineDetail(_) => self.timeline_detail_view(),
+            Screen::GrammarRules => self.grammar_rules_view(),
+            Screen::GrammarRuleDetail(_) => self.grammar_rule_detail_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),

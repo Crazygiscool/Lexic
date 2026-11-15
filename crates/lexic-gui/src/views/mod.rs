@@ -1,4 +1,5 @@
 mod dictionary;
+mod grammar;
 mod home;
 mod layout;
 mod notes;
