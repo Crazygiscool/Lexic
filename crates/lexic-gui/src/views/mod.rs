@@ -5,3 +5,4 @@ mod notes;
 mod notes_graph;
 mod review;
 mod settings;
+mod timeline;

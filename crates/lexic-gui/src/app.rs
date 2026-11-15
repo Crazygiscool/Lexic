@@ -3,7 +3,7 @@
 #![allow(clippy::single_match)]
 #![allow(dead_code)]
 
-use lexic_core::model::{Card, Deck, Entry, Id, Note, Sense};
+use lexic_core::model::{Card, Deck, Entry, Id, Note, Sense, TimelineEvent};
 use lexic_core::schedule::{CardSnapshot, Scheduler, Sm2};
 use lexic_core::time::now_utc;
 use lexic_dict::{DictionaryClient, LookupResult, normalize};
@@ -89,6 +89,8 @@ pub enum Screen {
     Notes,
     NoteDetail(lexic_core::model::Id),
     NoteGraph(Option<lexic_core::model::Id>),
+    Timeline,
+    TimelineDetail(lexic_core::model::Id),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -159,6 +161,19 @@ pub struct App {
     pub(crate) note_editor_status: Option<String>,
     pub(crate) note_selected_id: Option<lexic_core::model::Id>,
     pub(crate) note_search_input: String,
+
+    pub(crate) timeline_events: Vec<TimelineEvent>,
+    pub(crate) timeline_subjects: Vec<String>,
+    pub(crate) timeline_subject_filter: Option<String>,
+    pub(crate) active_timeline_event: Option<TimelineEvent>,
+    pub(crate) timeline_editor_title: String,
+    pub(crate) timeline_editor_description: String,
+    pub(crate) timeline_editor_subject: String,
+    pub(crate) timeline_editor_start_date: String,
+    pub(crate) timeline_editor_end_date: String,
+    pub(crate) timeline_editor_note_id: Option<lexic_core::model::Id>,
+    pub(crate) timeline_editor_status: Option<String>,
+    pub(crate) timeline_selected_id: Option<lexic_core::model::Id>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -294,6 +309,25 @@ pub enum Message {
     NoteOpened(Option<Note>),
     OpenNoteGraph,
     OpenNoteGraphCentered(lexic_core::model::Id),
+
+    TimelineEventOpened(Option<TimelineEvent>),
+    LoadTimeline,
+    TimelineLoaded(Vec<TimelineEvent>),
+    TimelineSubjectsLoaded(Vec<String>),
+    TimelineSelected(lexic_core::model::Id),
+    TimelineSubjectFilterChanged(Option<String>),
+    NewTimelineEvent,
+    TimelineTitleChanged(String),
+    TimelineDescriptionChanged(String),
+    TimelineSubjectChanged(String),
+    TimelineStartDateChanged(String),
+    TimelineEndDateChanged(String),
+    TimelineNoteChanged(Option<lexic_core::model::Id>),
+    SaveTimelineEvent,
+    TimelineEventSaved(Result<(), String>),
+    DeleteTimelineEvent(lexic_core::model::Id),
+    TimelineEventDeleted(Result<(), String>),
+    CancelTimelineEdit,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -370,6 +404,19 @@ impl App {
             note_editor_status: None,
             note_selected_id: None,
             note_search_input: String::new(),
+
+            timeline_events: Vec::new(),
+            timeline_subjects: Vec::new(),
+            timeline_subject_filter: None,
+            active_timeline_event: None,
+            timeline_editor_title: String::new(),
+            timeline_editor_description: String::new(),
+            timeline_editor_subject: String::from("History"),
+            timeline_editor_start_date: String::new(),
+            timeline_editor_end_date: String::new(),
+            timeline_editor_note_id: None,
+            timeline_editor_status: None,
+            timeline_selected_id: None,
         };
         let task = if let Some(store) = app.store.clone() {
             let store_for_stats = store.clone();
@@ -554,6 +601,9 @@ impl App {
                 if let Screen::NoteGraph(_) = screen {
                     return Task::none();
                 }
+                if screen == Screen::Timeline {
+                    return self.update(Message::LoadTimeline);
+                }
                 Task::none()
             }
             Message::ToggleSidebar => {
@@ -577,6 +627,7 @@ impl App {
                                 "3" => return self.update(Message::Navigate(Screen::Search)),
                                 "4" => return self.update(Message::Navigate(Screen::Settings)),
                                 "5" => return self.update(Message::Navigate(Screen::Notes)),
+                                "6" => return self.update(Message::Navigate(Screen::Timeline)),
                                 _ => {}
                             },
                             _ => {}
@@ -1585,6 +1636,234 @@ impl App {
             }
             Message::NoteEditorAction(action) => {
                 self.note_editor_content.perform(action);
+                Task::none()
+            }
+
+            // === Timeline Events ===
+            Message::LoadTimeline => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                let subject_filter = self.timeline_subject_filter.clone();
+                let store_for_subjects = store.clone();
+                Task::batch([
+                    Task::perform(
+                        async move {
+                            store
+                                .list_timeline_events(subject_filter.as_deref())
+                                .unwrap_or_default()
+                        },
+                        Message::TimelineLoaded,
+                    ),
+                    Task::perform(
+                        async move {
+                            store_for_subjects
+                                .list_timeline_events(None)
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|e| e.subject)
+                                .collect::<std::collections::HashSet<_>>()
+                                .into_iter()
+                                .collect::<Vec<_>>()
+                        },
+                        Message::TimelineSubjectsLoaded,
+                    ),
+                ])
+            }
+            Message::TimelineLoaded(events) => {
+                self.timeline_events = events;
+                Task::none()
+            }
+            Message::TimelineSubjectsLoaded(subjects) => {
+                self.timeline_subjects = subjects;
+                Task::none()
+            }
+            Message::TimelineSelected(event_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                self.timeline_selected_id = Some(event_id);
+                self.screen = Screen::TimelineDetail(event_id);
+                Task::perform(
+                    async move { store.get_timeline_event(event_id).unwrap_or_default() },
+                    Message::TimelineEventOpened,
+                )
+            }
+            Message::TimelineEventOpened(event) => {
+                self.active_timeline_event = event;
+                if let Some(event) = &self.active_timeline_event {
+                    self.timeline_editor_title = event.title.clone();
+                    self.timeline_editor_description = event.description.clone();
+                    self.timeline_editor_subject = event.subject.clone();
+                    self.timeline_editor_start_date =
+                        event.start_date.format("%Y-%m-%d").to_string();
+                    self.timeline_editor_end_date = event
+                        .end_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default();
+                    self.timeline_editor_note_id = event.note_id;
+                }
+                Task::none()
+            }
+            Message::TimelineSubjectFilterChanged(subject) => {
+                self.timeline_subject_filter = subject;
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                let filter = self.timeline_subject_filter.clone();
+                Task::perform(
+                    async move {
+                        store
+                            .list_timeline_events(filter.as_deref())
+                            .unwrap_or_default()
+                    },
+                    Message::TimelineLoaded,
+                )
+            }
+            Message::NewTimelineEvent => {
+                self.active_timeline_event = None;
+                self.timeline_selected_id = None;
+                self.timeline_editor_title = String::new();
+                self.timeline_editor_description = String::new();
+                self.timeline_editor_subject = String::from("History");
+                self.timeline_editor_start_date = String::new();
+                self.timeline_editor_end_date = String::new();
+                self.timeline_editor_note_id = None;
+                self.timeline_editor_status = None;
+                self.screen = Screen::TimelineDetail(lexic_core::model::Id::nil());
+                Task::none()
+            }
+            Message::TimelineTitleChanged(value) => {
+                self.timeline_editor_title = value;
+                Task::none()
+            }
+            Message::TimelineDescriptionChanged(value) => {
+                self.timeline_editor_description = value;
+                Task::none()
+            }
+            Message::TimelineSubjectChanged(value) => {
+                self.timeline_editor_subject = value;
+                Task::none()
+            }
+            Message::TimelineStartDateChanged(value) => {
+                self.timeline_editor_start_date = value;
+                Task::none()
+            }
+            Message::TimelineEndDateChanged(value) => {
+                self.timeline_editor_end_date = value;
+                Task::none()
+            }
+            Message::TimelineNoteChanged(note_id) => {
+                self.timeline_editor_note_id = note_id;
+                Task::none()
+            }
+            Message::SaveTimelineEvent => {
+                let Some(store) = self.store.clone() else {
+                    self.timeline_editor_status = Some(String::from("Database is not ready"));
+                    return Task::none();
+                };
+                let title = self.timeline_editor_title.trim().to_string();
+                if title.is_empty() {
+                    self.timeline_editor_status = Some(String::from("Title cannot be empty"));
+                    return Task::none();
+                }
+                let start_date = match chrono::NaiveDate::parse_from_str(
+                    &self.timeline_editor_start_date,
+                    "%Y-%m-%d",
+                ) {
+                    Ok(d) => d.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+                    Err(_) => chrono::Utc::now(),
+                };
+                let end_date = if self.timeline_editor_end_date.is_empty() {
+                    None
+                } else {
+                    chrono::NaiveDate::parse_from_str(&self.timeline_editor_end_date, "%Y-%m-%d")
+                        .ok()
+                        .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc())
+                };
+                let event = TimelineEvent {
+                    id: self
+                        .active_timeline_event
+                        .as_ref()
+                        .map(|e| e.id)
+                        .unwrap_or_else(lexic_core::model::Id::nil),
+                    title,
+                    description: self.timeline_editor_description.clone(),
+                    subject: self.timeline_editor_subject.clone(),
+                    start_date,
+                    end_date,
+                    note_id: self.timeline_editor_note_id,
+                };
+                Task::perform(
+                    async move {
+                        if event.id == Id::nil() {
+                            let new_id = Uuid::new_v4();
+                            let event_with_id = TimelineEvent {
+                                id: new_id,
+                                ..event
+                            };
+                            store
+                                .create_timeline_event(&event_with_id)
+                                .map_err(|error| error.to_string())?;
+                        } else {
+                            store
+                                .update_timeline_event(&event)
+                                .map_err(|error| error.to_string())?;
+                        }
+                        Ok(())
+                    },
+                    Message::TimelineEventSaved,
+                )
+            }
+            Message::TimelineEventSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        self.timeline_editor_status = Some(String::from("Timeline event saved"));
+                        let _ = self.update(Message::LoadTimeline);
+                        self.screen = Screen::Timeline;
+                    }
+                    Err(error) => self.timeline_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::DeleteTimelineEvent(event_id) => {
+                let Some(store) = self.store.clone() else {
+                    return Task::none();
+                };
+                Task::perform(
+                    async move {
+                        store
+                            .delete_timeline_event(event_id)
+                            .map_err(|error| error.to_string())?;
+                        Ok(())
+                    },
+                    Message::TimelineEventDeleted,
+                )
+            }
+            Message::TimelineEventDeleted(result) => {
+                match result {
+                    Ok(()) => {
+                        self.active_timeline_event = None;
+                        self.timeline_selected_id = None;
+                        self.timeline_editor_status = Some(String::from("Timeline event deleted"));
+                        let _ = self.update(Message::LoadTimeline);
+                        self.screen = Screen::Timeline;
+                    }
+                    Err(error) => self.timeline_editor_status = Some(error),
+                }
+                Task::none()
+            }
+            Message::CancelTimelineEdit => {
+                self.active_timeline_event = None;
+                self.timeline_selected_id = None;
+                self.timeline_editor_title = String::new();
+                self.timeline_editor_description = String::new();
+                self.timeline_editor_subject = String::from("History");
+                self.timeline_editor_start_date = String::new();
+                self.timeline_editor_end_date = String::new();
+                self.timeline_editor_note_id = None;
+                self.timeline_editor_status = None;
+                self.screen = Screen::Timeline;
                 Task::none()
             }
         }

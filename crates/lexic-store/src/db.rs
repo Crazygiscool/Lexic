@@ -889,6 +889,23 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_timeline_event(&self, event: &TimelineEvent) -> Result<(), StoreError> {
+        let conn = self.lock()?;
+        conn.execute(
+            "UPDATE timeline_events SET title = ?1, description = ?2, start_date = ?3, end_date = ?4, subject = ?5, note_id = ?6 WHERE id = ?7",
+            params![
+                event.title,
+                event.description,
+                event.start_date.timestamp(),
+                event.end_date.map(|d| d.timestamp()),
+                event.subject,
+                event.note_id.map(|id| id.to_string()),
+                event.id.to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn list_timeline_events(
         &self,
         subject: Option<&str>,

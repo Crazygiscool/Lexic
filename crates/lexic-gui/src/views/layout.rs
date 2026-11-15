@@ -125,6 +125,14 @@ impl App {
             nav_link(self, Screen::Notes, file_text(), "Notes", "\u{2325}5", None),
             nav_link(
                 self,
+                Screen::Timeline,
+                calendar(),
+                "Timelines",
+                "\u{2325}6",
+                None
+            ),
+            nav_link(
+                self,
                 Screen::Review,
                 library(),
                 "Review Deck",
@@ -136,7 +144,7 @@ impl App {
                 Screen::Search,
                 book_open(),
                 "Grammar Dict",
-                "\u{2325}6",
+                "\u{2325}7",
                 None
             ),
             nav_link(
@@ -144,7 +152,7 @@ impl App {
                 Screen::Settings,
                 settings(),
                 "Engine & Interop",
-                "\u{2325}7",
+                "\u{2325}8",
                 None
             ),
         ]
@@ -289,6 +297,8 @@ impl App {
             Screen::Notes => self.notes_view(),
             Screen::NoteDetail(_) => self.note_detail_view(),
             Screen::NoteGraph(_) => self.notes_graph_view(),
+            Screen::Timeline => self.timeline_view(),
+            Screen::TimelineDetail(_) => self.timeline_detail_view(),
             Screen::Review => self.review_view(),
             Screen::Search => self.search_view(),
             Screen::Settings => self.settings_view(),
