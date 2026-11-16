@@ -46,7 +46,7 @@ ShowInstDetails show
 
 Section "MainSection" SEC01
   SetOutPath "\$INSTDIR"
-  File "/r=1 dist/lexic-windows/*"
+  File /r "dist/lexic-windows/*"
 
   ; Create Start Menu shortcuts
   CreateShortCut "\$SMPROGRAMS\\${NAME}.lnk" "\$INSTDIR\\lexic-gui.exe"
