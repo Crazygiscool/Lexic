@@ -40,7 +40,7 @@ cat > "${REPO_ROOT}/scripts/lexic.nsi" << EOF
 
 Name "\\${NAME} \${VERSION}"
 OutFile "\${REPO_ROOT}/dist/lexic-\${VERSION}-windows-installer.exe"
-InstallDir "\$PROGRAMFILES64\\${NAME}"
+InstallDir "\$PROGRAMFILES64\${NAME}"
 ShowInstDetails show
 
 Section "MainSection" SEC01
