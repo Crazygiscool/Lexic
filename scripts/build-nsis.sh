@@ -16,10 +16,11 @@ VERSION="${VERSION#v}"
 
 echo "==> Building Windows NSIS installer for Lexic v${VERSION}..."
 
-# Create the NSIS installer script using a quoted heredoc to prevent bash variable expansion
+# Create the NSIS installer script using a QUOTED heredoc ('EOF') so that bash
+# does NOT expand $NAME, $PUBLISHER, $WEBSITE, etc. as shell variables.
 cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'EOF'
 !define NAME "Lexic"
-!define VERSION "${VERSION}"
+!define VERSION "__LEXIC_VERSION__"
 !define PUBLISHER "Crazygiscool"
 !define WEBSITE "https://github.com/Crazygiscool/Lexic"
 !define INSTALLER_NAME "lexic-${VERSION}-windows-installer.exe"
@@ -38,14 +39,14 @@ cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'EOF'
 
 !insertmacro MUI_LANGUAGE "English"
 
-Name "\${NAME} \${VERSION}"
-OutFile "\${REPO_ROOT}/dist/lexic-\${VERSION}-windows-installer.exe"
+Name "${NAME} ${VERSION}"
+OutFile "dist/lexic-${VERSION}-windows-installer.exe"
 InstallDir "\$PROGRAMFILES64\\${NAME}"
 ShowInstDetails show
 
 Section "MainSection" SEC01
   SetOutPath "\$INSTDIR"
-  File "/r=1 \${REPO_ROOT}/dist/lexic-windows/*"
+  File "/r=1 dist/lexic-windows/*"
 
   ; Create Start Menu shortcuts
   CreateShortCut "\$SMPROGRAMS\\${NAME}.lnk" "\$INSTDIR\\lexic-gui.exe"
@@ -71,6 +72,11 @@ Section "Uninstall"
   DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${NAME}"
 SectionEnd
 EOF
+
+# Inject the real version (passed as $1) into the NSIS script. The quoted
+# heredoc above prevents bash from expanding ${VERSION}, so NSIS would see an
+# empty self-referential !define. Substitute the placeholder after writing.
+sed -i "s/__LEXIC_VERSION__/$VERSION/" "${REPO_ROOT}/scripts/lexic.nsi"
 
 # Build the installer with NSIS
 if command -v makensis >/dev/null 2>&1; then

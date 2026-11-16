@@ -1,0 +1,8 @@
+# Force LF line endings on all platforms so shell scripts and CI
+# workflows check out identically on Windows runners.
+# A CRLF-checked-out script breaks quoted heredocs (the `EOF` delimiter
+# becomes `EOF\r` and never terminates), so makensis never runs and the
+# NSIS installer is never produced.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
