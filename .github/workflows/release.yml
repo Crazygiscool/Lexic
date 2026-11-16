@@ -108,6 +108,8 @@ jobs:
         shell: bash
         run: |
           choco install nsis -y --no-progress
+          # NSIS installs makensis to a Program Files dir not always on PATH
+          export PATH="$PATH:/c/Program Files/NSIS:/c/Program Files (x86)/NSIS"
           ./scripts/build-nsis.sh ${{ needs.gate.outputs.version }}
           cp dist/lexic-${{ needs.gate.outputs.version }}-windows-installer.exe dist/
 

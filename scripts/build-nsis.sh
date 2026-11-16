@@ -79,8 +79,15 @@ EOF
 sed -i "s/__LEXIC_VERSION__/$VERSION/" "${REPO_ROOT}/scripts/lexic.nsi"
 
 # Build the installer with NSIS
-if command -v makensis >/dev/null 2>&1; then
-  makensis "${REPO_ROOT}/scripts/lexic.nsi"
+MAKENSIS="$(command -v makensis 2>/dev/null || true)"
+if [ -z "$MAKENSIS" ]; then
+  # NSIS installs makensis to a Program Files dir not always on PATH; probe it.
+  for p in "/c/Program Files/NSIS/makensis.exe" "/c/Program Files (x86)/NSIS/makensis.exe"; do
+    if [ -f "$p" ]; then MAKENSIS="$p"; break; fi
+  done
+fi
+if [ -n "$MAKENSIS" ]; then
+  "$MAKENSIS" "${REPO_ROOT}/scripts/lexic.nsi"
   echo "==> NSIS installer built: dist/lexic-${VERSION}-windows-installer.exe"
 else
   echo "WARNING: makensis not found. Install NSIS (choco install nsis) to build the Windows installer."
