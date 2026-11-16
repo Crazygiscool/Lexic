@@ -17,7 +17,7 @@ VERSION="${VERSION#v}"
 echo "==> Building Windows NSIS installer for Lexic v${VERSION}..."
 
 # Create the NSIS installer script
-cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'NSIEOF'
+cat > "${REPO_ROOT}/scripts/lexic.nsi" << EOF
 !define NAME "Lexic"
 !define VERSION "${VERSION}"
 !define PUBLISHER "Crazygiscool"
@@ -38,7 +38,7 @@ cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'NSIEOF'
 
 !insertmacro MUI_LANGUAGE "English"
 
-Name "${NAME} \${VERSION}"
+Name "\\${NAME} \${VERSION}"
 OutFile "\${REPO_ROOT}/dist/lexic-\${VERSION}-windows-installer.exe"
 InstallDir "\$PROGRAMFILES64\\${NAME}"
 ShowInstDetails show
