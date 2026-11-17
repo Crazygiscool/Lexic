@@ -16,9 +16,17 @@ VERSION="${VERSION#v}"
 
 echo "==> Building Windows NSIS installer for Lexic v${VERSION}..."
 
-# Create the NSIS installer script using a QUOTED heredoc ('EOF') so that bash
-# does NOT expand $NAME, $PUBLISHER, $WEBSITE, etc. as shell variables.
-cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'EOF'
+DIST_DIR="${REPO_ROOT}/dist"
+WIN_ASSETS="${DIST_DIR}/lexic-windows"
+
+if [ ! -d "$WIN_ASSETS" ]; then
+  echo "ERROR: missing Windows assets at ${WIN_ASSETS}. Run the Package/Extract Windows assets steps first." >&2
+  exit 1
+fi
+
+# Create the NSIS installer script inside dist/ so that NSIS resolves relative
+# paths (OutFile, File) against dist/, where dist/lexic-windows/ actually lives.
+cat > "${DIST_DIR}/lexic.nsi" << 'EOF'
 !define NAME "Lexic"
 !define VERSION "__LEXIC_VERSION__"
 !define PUBLISHER "Crazygiscool"
@@ -40,13 +48,13 @@ cat > "${REPO_ROOT}/scripts/lexic.nsi" << 'EOF'
 !insertmacro MUI_LANGUAGE "English"
 
 Name "${NAME} ${VERSION}"
-OutFile "dist/lexic-${VERSION}-windows-installer.exe"
+OutFile "lexic-${VERSION}-windows-installer.exe"
 InstallDir "\$PROGRAMFILES64\\${NAME}"
 ShowInstDetails show
 
 Section "MainSection" SEC01
   SetOutPath "\$INSTDIR"
-  File /r "dist/lexic-windows/*"
+  File "lexic-windows/lexic-gui.exe"
 
   ; Create Start Menu shortcuts
   CreateShortCut "\$SMPROGRAMS\\${NAME}.lnk" "\$INSTDIR\\lexic-gui.exe"
@@ -76,7 +84,7 @@ EOF
 # Inject the real version (passed as $1) into the NSIS script. The quoted
 # heredoc above prevents bash from expanding ${VERSION}, so NSIS would see an
 # empty self-referential !define. Substitute the placeholder after writing.
-sed -i "s/__LEXIC_VERSION__/$VERSION/" "${REPO_ROOT}/scripts/lexic.nsi"
+sed -i "s/__LEXIC_VERSION__/$VERSION/" "${DIST_DIR}/lexic.nsi"
 
 # Build the installer with NSIS
 MAKENSIS="$(command -v makensis 2>/dev/null || true)"
@@ -86,10 +94,20 @@ if [ -z "$MAKENSIS" ]; then
     if [ -f "$p" ]; then MAKENSIS="$p"; break; fi
   done
 fi
+
+INSTALLER="${DIST_DIR}/lexic-${VERSION}-windows-installer.exe"
+
 if [ -n "$MAKENSIS" ]; then
-  "$MAKENSIS" "${REPO_ROOT}/scripts/lexic.nsi"
-  echo "==> NSIS installer built: dist/lexic-${VERSION}-windows-installer.exe"
+  # Run makensis from dist/ so relative paths in the .nsi resolve against dist/.
+  ( cd "${DIST_DIR}" && "$MAKENSIS" lexic.nsi )
+  rm -f "${DIST_DIR}/lexic.nsi"
+  if [ ! -f "$INSTALLER" ]; then
+    echo "ERROR: makensis ran but ${INSTALLER} was not created" >&2
+    exit 1
+  fi
+  echo "==> NSIS installer built: ${INSTALLER}"
 else
-  echo "WARNING: makensis not found. Install NSIS (choco install nsis) to build the Windows installer."
-  echo "   NSIS script saved to: scripts/lexic.nsi"
+  echo "ERROR: makensis not found. Install NSIS (choco install nsis) to build the Windows installer." >&2
+  echo "   NSIS script saved to: ${DIST_DIR}/lexic.nsi" >&2
+  exit 1
 fi
