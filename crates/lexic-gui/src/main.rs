@@ -58,7 +58,9 @@ fn main() -> iced::Result {
         .subscription(app::App::subscription)
         .font(include_bytes!("../../../../assets/fonts/Inter-Regular.ttf"))
         .font(include_bytes!("../../../../assets/fonts/Inter-Medium.ttf"))
-        .font(include_bytes!("../../../../assets/fonts/Inter-SemiBold.ttf"))
+        .font(include_bytes!(
+            "../../../../assets/fonts/Inter-SemiBold.ttf"
+        ))
         .font(include_bytes!("../../../../assets/fonts/Inter-Bold.ttf"))
         .font(include_bytes!(
             "../../../../assets/fonts/JetBrainsMono-Regular.ttf"
