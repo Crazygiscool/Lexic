@@ -2,6 +2,7 @@
 name = "lexic-gui"
 version = "1.2.0"
 edition = "2024"
+description = "Offline-first dictionary + SM-2 flashcard desktop GUI (iced)"
 license = "MIT"
 
 [features]

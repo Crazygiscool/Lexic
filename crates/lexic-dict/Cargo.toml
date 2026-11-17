@@ -2,6 +2,7 @@
 name = "lexic-dict"
 version = "1.2.0"
 edition = "2024"
+description = "Free Dictionary API client and query normalization for Lexic"
 license = "MIT"
 
 [dependencies]

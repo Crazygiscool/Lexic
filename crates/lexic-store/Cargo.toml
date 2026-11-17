@@ -2,6 +2,7 @@
 name = "lexic-store"
 version = "1.2.0"
 edition = "2024"
+description = "SQLite storage layer for Lexic: schema, migrations, repositories, backup"
 license = "MIT"
 
 [dependencies]
