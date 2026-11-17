@@ -56,18 +56,12 @@ fn main() -> iced::Result {
         .window(window)
         .style(app::App::style)
         .subscription(app::App::subscription)
-        .font(include_bytes!("../../../../assets/fonts/Inter-Regular.ttf"))
-        .font(include_bytes!("../../../../assets/fonts/Inter-Medium.ttf"))
-        .font(include_bytes!(
-            "../../../../assets/fonts/Inter-SemiBold.ttf"
-        ))
-        .font(include_bytes!("../../../../assets/fonts/Inter-Bold.ttf"))
-        .font(include_bytes!(
-            "../../../../assets/fonts/JetBrainsMono-Regular.ttf"
-        ))
-        .font(include_bytes!(
-            "../../../../assets/fonts/JetBrainsMono-Medium.ttf"
-        ))
+        .font(include_bytes!("../assets/fonts/Inter-Regular.ttf"))
+        .font(include_bytes!("../assets/fonts/Inter-Medium.ttf"))
+        .font(include_bytes!("../assets/fonts/Inter-SemiBold.ttf"))
+        .font(include_bytes!("../assets/fonts/Inter-Bold.ttf"))
+        .font(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"))
+        .font(include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"))
         .font(iced_fonts::LUCIDE_FONT_BYTES)
         .default_font(iced::Font::with_name("Inter"))
         .run()
