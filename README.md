@@ -4,6 +4,7 @@ A clean, modern, cross-platform Rust dictionary and spaced repetition flashcard 
 
 ![Rust](https://img.shields.io/badge/Language-Rust-orange.svg)
 ![GUI](https://img.shields.io/badge/GUI-iced-blue.svg)
+[![Release](https://github.com/Crazygiscool/Lexic/actions/workflows/release.yml/badge.svg)](https://github.com/Crazygiscool/Lexic/actions/workflows/release.yml)
 ![Storage](https://img.shields.io/badge/Storage-SQLite-lightgrey.svg)
 
 ---
