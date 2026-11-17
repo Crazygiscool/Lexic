@@ -52,6 +52,7 @@ cat > "${CHOCO_TMP}/lexic.nuspec" << EOF
 EOF
 
 # Chocolatey install script
+mkdir -p "${CHOCO_TMP}/tools"
 cat > "${CHOCO_TMP}/tools/chocolateyinstall.ps1" << 'EOF'
 $ErrorActionPreference = 'Stop';
 $toolsDir   = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"

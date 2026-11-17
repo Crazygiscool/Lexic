@@ -9,9 +9,9 @@ default = ["ui"]
 ui = ["dep:iced"]
 
 [dependencies]
-lexic-core = { path = "../lexic-core" }
-lexic-store = { path = "../lexic-store" }
-lexic-dict = { path = "../lexic-dict" }
+lexic-core = { path = "../lexic-core", version = "1.2.0" }
+lexic-store = { path = "../lexic-store", version = "1.2.0" }
+lexic-dict = { path = "../lexic-dict", version = "1.2.0" }
 iced = { version = "0.14", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "x11", "wayland", "tokio", "svg", "image", "canvas", "lazy"], optional = true }
 chrono = { workspace = true }
 directories = { workspace = true }
