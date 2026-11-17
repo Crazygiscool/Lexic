@@ -24,6 +24,23 @@ if [ ! -d "$WIN_ASSETS" ]; then
   exit 1
 fi
 
+# Locate the built Windows binary robustly. Compress-Archive/Expand-Archive may
+# place it at dist/lexic-windows/lexic-gui.exe, but earlier CI runs showed the
+# extraction nesting can vary, so search dist/ first and fall back to
+# target/release/. Copy it to dist/lexic-gui.exe so makensis (run from dist/)
+# can pick it up by bare filename — no directory separators, avoiding NSIS's
+# forward-slash path quirks.
+SRC_EXE="$(find "${DIST_DIR}" -maxdepth 4 -name 'lexic-gui.exe' -type f 2>/dev/null | head -n 1 || true)"
+if [ -z "$SRC_EXE" ] && [ -f "${REPO_ROOT}/target/release/lexic-gui.exe" ]; then
+  SRC_EXE="${REPO_ROOT}/target/release/lexic-gui.exe"
+fi
+if [ -z "$SRC_EXE" ]; then
+  echo "ERROR: lexic-gui.exe not found; dist/ contents:" >&2
+  find "${DIST_DIR}" -maxdepth 4 -print >&2 || true
+  exit 1
+fi
+cp -f "$SRC_EXE" "${DIST_DIR}/lexic-gui.exe"
+
 # Create the NSIS installer script inside dist/ so that NSIS resolves relative
 # paths (OutFile, File) against dist/, where dist/lexic-windows/ actually lives.
 cat > "${DIST_DIR}/lexic.nsi" << 'EOF'
@@ -54,7 +71,7 @@ ShowInstDetails show
 
 Section "MainSection" SEC01
   SetOutPath "\$INSTDIR"
-  File "lexic-windows/lexic-gui.exe"
+  File "lexic-gui.exe"
 
   ; Create Start Menu shortcuts
   CreateShortCut "\$SMPROGRAMS\\${NAME}.lnk" "\$INSTDIR\\lexic-gui.exe"
@@ -100,7 +117,7 @@ INSTALLER="${DIST_DIR}/lexic-${VERSION}-windows-installer.exe"
 if [ -n "$MAKENSIS" ]; then
   # Run makensis from dist/ so relative paths in the .nsi resolve against dist/.
   ( cd "${DIST_DIR}" && "$MAKENSIS" lexic.nsi )
-  rm -f "${DIST_DIR}/lexic.nsi"
+  rm -f "${DIST_DIR}/lexic.nsi" "${DIST_DIR}/lexic-gui.exe"
   if [ ! -f "$INSTALLER" ]; then
     echo "ERROR: makensis ran but ${INSTALLER} was not created" >&2
     exit 1
