@@ -37,9 +37,23 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### Installation & Running
 
+**One-line installer (Linux / macOS):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Crazygiscool/Lexic/main/scripts/install.sh | sh
+```
+
+This detects your OS/arch, downloads the latest GitHub release asset, and installs
+the `lexic` binary to `~/.local/bin`. Make sure that directory is on your `PATH`.
+
+**Windows:** Download and run the NSIS installer from the [releases page](https://github.com/Crazygiscool/Lexic/releases),
+or install via Chocolatey: `choco install lexic`
+
+**From source:**
+
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/lexic.git
+   git clone https://github.com/Crazygiscool/Lexic.git
    cd lexic
    ```
 
